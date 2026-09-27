@@ -30,7 +30,7 @@ jobs:
       tag: ${{ steps.check.outputs.tag }}
       release: ${{ steps.check.outputs.release }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Версия из package.json и опубликованные релизы
         id: check
