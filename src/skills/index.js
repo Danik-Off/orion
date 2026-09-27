@@ -29,4 +29,5 @@ module.exports = [
   require('./facts'),
   require('./steam'),
   require('./smarthome'),
+  require('./delegate'),
 ];

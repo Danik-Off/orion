@@ -145,9 +145,12 @@ const QUICK = [
   [new RegExp(`состояни[а-я]* ${PC}|(?:проверь|оцени|диагностик[а-я]*) ${PC}|как (?:там |себя чувствует |поживает |дела у |с )?(?:мой |моим |наш )?${PC}$`), ''],
 ];
 
+// «сколько места занимают загрузки», «…файлы на рабочем столе» — это папка (навык files), не весь диск
+const FOLDER_WORDS = /загрузк|скачан|документ|рабоч[а-я]* стол|папк|фото|видео|музык|скриншот|изображен/;
+
 function quick(text) {
   const t = text.toLowerCase().replace(/ё/g, 'е').replace(/[^а-яa-z ]+/g, '').replace(/\s+/g, ' ').trim();
-  const hit = QUICK.find(([re]) => re.test(t));
+  const hit = QUICK.find(([re, arg]) => re.test(t) && !(arg === 'диск' && FOLDER_WORDS.test(t)));
   return hit ? { addressed: true, say: 'Проверяю.', actions: [{ tool: 'pc_status', arg: hit[1] }] } : null;
 }
 

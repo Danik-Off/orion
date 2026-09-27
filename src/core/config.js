@@ -33,7 +33,7 @@ const DEFAULTS = {
     ttsSpeaker: 9,
     ttsSteps: 12, // Supertonic: больше шагов — чище звук (8 → 0,6 с, 12 → 0,9 с, 16 → 1,2 с на 7 с речи)
     ttsSpeed: 1.0,
-    ttsTuning: {},
+    stress: true, // ставить ударения перед озвучкой (lib/stress.js): «зам+ок на двери», «вс+ё готово»
     listenOnStart: true,
     wakeWords: ['орион', 'orion'],
     // Подсказки распознавателю: имя и wakeWords подсказываются всегда; сюда — редкие слова, которые он путает
@@ -52,6 +52,11 @@ const DEFAULTS = {
     },
   },
   skills: {}, // { "music": { "enabled": false } } — отключить навык
+  // Передача сложных задач (код, оптимизация, отладка) агенту Claude Code или Codex, если он установлен.
+  // Включается согласием: Орион спросит сам (skills.delegate.enabled). agent — "claude" или "codex", пусто —
+  // первый найденный; workDir — где создавать папки задач (пусто — «Документы\Задачи агента»);
+  // projects — свои проекты по названию: { "орион": "C:\\code\\orion" } — «оптимизируй код ориона»
+  delegate: { agent: '', workDir: '', projects: {}, timeoutMin: 30 },
   discoverApps: true,
   apps: {},
   search: { browserUrl: 'https://ya.ru/search/?text=' },

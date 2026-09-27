@@ -12,6 +12,7 @@
 //               или функцию (text) → bool — например, «есть ли во фразе название установленной игры»
 //   always    — подгружать всегда (запасной вариант на всё, что не нашлось по словам)
 //   hint: false — не подсказывать модели этот навык, даже если слова совпали (память: «я устал» — не команда)
+//   fallback: true — запасной навык: модель ответила «не умею» — запрос повторяется с ним (агент для сложных задач)
 //   available(config) → false — навык не настроен (например, нет адреса умного дома) и не подключается
 //   platforms — на каких ОС навык работает (['win32']); не указано — на всех
 //   tools     — инструменты, которые модель может вызвать:
@@ -29,8 +30,11 @@
 //   rules     — дополнительные строки правил для промпта (подгружаются вместе с навыком)
 //   quick(text, ctx) → план или null — разбор частых фраз без модели (мгновенно)
 //   init(ctx) — подготовка при старте; может дополнить описание своих инструментов
+//   offer(ctx) — предложить что-то при запуске, когда всё установлено (вопрос через ctx.confirm):
+//               «Нашёл Claude Code — передавать ему сложные задачи?»
 //
-// ctx — то, чем ядро делится с навыками: config, dataDir, llm, confirm, remind, openExternal, openPath,
+// ctx — то, чем ядро делится с навыками: config, dataDir, llm, confirm (true/false; null — не ответили),
+//   saveSettings(patch) — записать настройку в config.json (как окно настроек), remind, openExternal, openPath,
 //   showItemInFolder, clipboard, audit, perform(text, request) — выполнить фразу как команду (для сценариев), а также
 //   memory — база знаний ТЕКУЩЕГО собеседника (у каждого голоса своя; у гостя — только чтение пустой),
 //   person — { id, name, honorific } или null,
@@ -148,6 +152,10 @@ function createSkillRegistry(skills, { config, ctx, audit, platform = process.pl
     return enabled.find((s) => normalize(s.title || '').includes(a))?.id || null;
   }
 
+  // Навык-запасной (fallback: true): ему уходят просьбы, от которых модель отказалась. Выключенный в настройках
+  // после запуска — уже не запасной (список навыков пересоберётся при перезапуске)
+  const fallback = () => enabled.find((s) => s.fallback && config.skills?.[s.id]?.enabled !== false)?.id || null;
+
   const skillOf = (toolName) => tools.get(toolName)?.skill || null;
   const fillerOf = (toolName) => tools.get(toolName)?.tool.filler || null;
   const speaksOf = (toolName) => tools.get(toolName)?.tool.speaks === true;
@@ -195,6 +203,17 @@ function createSkillRegistry(skills, { config, ctx, audit, platform = process.pl
     for (const skill of enabled) await skill.init?.(ctx);
   }
 
+  // Предложения навыков — по одному: в окне одновременно висит только один вопрос
+  async function offer() {
+    for (const skill of enabled) {
+      try {
+        await skill.offer?.(ctx);
+      } catch (err) {
+        audit({ skill: skill.id, offer: String(err?.message || err) });
+      }
+    }
+  }
+
   return {
     names,
     catalogPrompt,
@@ -207,6 +226,7 @@ function createSkillRegistry(skills, { config, ctx, audit, platform = process.pl
     scores,
     select,
     likely,
+    fallback,
     resolve,
     skillOf,
     fillerOf,
@@ -215,6 +235,7 @@ function createSkillRegistry(skills, { config, ctx, audit, platform = process.pl
     prepare,
     run,
     init,
+    offer,
     CHAT_TOPIC,
     ids: () => enabled.map((s) => s.id),
   };

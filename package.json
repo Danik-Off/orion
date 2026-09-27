@@ -1,7 +1,7 @@
 {
   "name": "orion",
   "productName": "Orion",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Орион — локальный голосовой ассистент в духе джарвис. на Electron + Ollama,максимально простой и удобный в использовании. Поддержка русского языка.",
   "author": {
@@ -23,7 +23,10 @@
     "icon": "node scripts/make-icon.js",
     "screenshots": "electron scripts/screenshots.js",
     "dist": "npm run icon && electron-builder --publish never",
-    "dist:dir": "npm run icon && electron-builder --dir --publish never"
+    "dist:dir": "npm run icon && electron-builder --dir --publish never",
+    "voice-check": "node scripts/voice-check.js",
+    "stress-eval": "node scripts/stress-eval.js",
+    "stress-phrases": "node scripts/stress-phrases.js"
   },
   "build": {
     "appId": "io.github.danik-off.orion",

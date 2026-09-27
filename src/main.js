@@ -21,6 +21,7 @@ const { createUpdater } = require('./core/updater');
 const { supports } = require('./core/skills');
 const { isHttpUrl } = require('./lib/websearch');
 const { normalizeForSpeech } = require('./lib/speech-text');
+const { forSynth } = require('./lib/stress');
 const allSkills = require('./skills');
 const pkg = require('../package.json');
 
@@ -91,13 +92,14 @@ const ui = createWindowManager({
 const pendingConfirms = new Map();
 
 // Подтверждение опасных действий: голосом («да»/«нет») или кнопками в окне.
+// Без ответа за 30 с — null: для действия это «нет», а предложение можно повторить в другой раз.
 function confirm(text) {
   return new Promise((resolve) => {
     const id = crypto.randomUUID();
     pendingConfirms.set(id, resolve);
     ui.setMode('full');
     ui.send('jarvis:confirm', { id, text });
-    setTimeout(() => pendingConfirms.delete(id) && resolve(false), 30_000);
+    setTimeout(() => pendingConfirms.delete(id) && resolve(null), 30_000);
   });
 }
 
@@ -119,8 +121,10 @@ const ctx = {
   openExternal: (url) => shell.openExternal(url),
   openPath: (p) => shell.openPath(p),
   showItemInFolder: (p) => shell.showItemInFolder(p),
+  trashItem: (p) => shell.trashItem(p), // удаление файлов — только в корзину
   clipboard: { readText: () => clipboard.readText(), writeText: (t) => clipboard.writeText(t) },
   dataDir,
+  saveSettings: (patch) => settings.save(patch), // settings создаётся ниже; навыки зовут это уже после запуска
   perform: async () => '', // подменяется ниже, когда ассистент создан (сценарии выполняют фразы как команды)
 };
 const skills = createSkillRegistry(allSkills, { config, ctx, audit });
@@ -430,8 +434,11 @@ on('jarvis:mic-reset', async () => {
 handle('jarvis:synth', async (text) => {
   if (typeof text !== 'string' || !text.trim() || text.length > 2000) return null;
   try {
-    // Числа, «ё», сокращения и английские названия — так, как их произносят
-    return await (await speechReady).speech.synth(normalizeForSpeech(text));
+    // Числа, «ё», сокращения и английские названия — так, как их произносят; затем ударения.
+    // Всё это только для синтезатора: окно показывает исходный текст ответа.
+    const spoken = normalizeForSpeech(text);
+    // Без ударений — убрать и те «+», что поставил нормализатор («ю-эс-б+и»)
+    return await (await speechReady).speech.synth(config.speech.stress === false ? spoken.replace(/\+/g, '') : forSynth(spoken));
   } catch (err) {
     audit({ speech: String(err?.message || err) });
     return null;
@@ -607,9 +614,13 @@ app.whenReady().then(async () => {
   // При автозапуске вместе с системой — сразу в трей, иначе показать окно.
   ui.setMode(process.argv.includes('--hidden') ? 'hidden' : 'full');
   // Первый запуск: спросить и докачать модели и языковую модель, показывая прогресс в окне.
-  // Когда всё на месте — проверить обновления (если не отключено в настройках): спросит голосом.
-  runSetup().then((ready) => {
-    if (ready && config.updates?.notify !== false) setTimeout(() => updater.check(), 5000);
+  // Когда всё на месте — предложения навыков («нашёл Claude Code — передавать ему задачи?»), затем
+  // проверка обновлений (если не отключена в настройках). Вопросы — по очереди: в окне виден только один.
+  runSetup().then(async (ready) => {
+    if (!ready) return;
+    await new Promise((r) => setTimeout(r, 3000));
+    await skills.offer();
+    if (config.updates?.notify !== false) setTimeout(() => updater.check(), 2000);
   });
 
   createTray({

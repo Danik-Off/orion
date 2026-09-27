@@ -51,7 +51,9 @@ async function main() {
 
   const registry = createSkillRegistry(require('../src/skills'), { config, ctx: { config }, audit: () => {} });
   await registry.init();
-  const skills = { ...registry, run: async () => ({ ok: true }) };
+  // replies — что «ответили» навыки на реплики before: { steam_price: 'Ведьмак стоит 25 долларов.' }
+  let replies = {};
+  const skills = { ...registry, run: async (tool) => ({ ok: true, speak: replies[tool] }) };
   if (!flag('--quick')) skills.quickPlan = () => null;
   if (flag('--all')) skills.select = () => registry.ids();
 
@@ -65,7 +67,9 @@ async function main() {
   const times = [];
   const rows = [];
   for (const c of list) {
+    replies = c.replies || {};
     for (const b of c.before || []) await assistant.handle(b, { source: 'wake', person });
+    replies = {};
     const callsBefore = calls;
     const t = Date.now();
     const r = await assistant.handle(c.text, { source: c.source || 'wake', person });
@@ -89,6 +93,12 @@ async function main() {
         const a = actions.find((x) => x.tool === hit);
         if (a && !new RegExp(c.arg, 'iu').test(a.arg)) problems.push(`arg не /${c.arg}/`);
       }
+    }
+    // all — несколько задач в одной фразе: нужны все эти инструменты, в этом порядке
+    if (c.all) {
+      const missing = c.all.filter((x) => !tools.includes(x));
+      if (missing.length) problems.push(`нет ${missing.join(', ')}`);
+      else if (c.all.some((x, i) => i && tools.indexOf(x) < tools.indexOf(c.all[i - 1]))) problems.push(`порядок не ${c.all.join(' → ')}`);
     }
     for (const bad of c.not || []) if (tools.includes(bad)) problems.push(`лишний ${bad}`);
     // say — регулярное выражение для ответа; notSay — чего в ответе быть не должно

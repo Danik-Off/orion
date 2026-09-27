@@ -1,4 +1,4 @@
-// Офлайн-речь через sherpa-onnx: потоковое распознавание (Vosk zipformer) и синтез (Piper или Supertonic).
+// Офлайн-речь через sherpa-onnx: потоковое распознавание (Vosk zipformer) и синтез (Supertonic 3).
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -224,8 +224,7 @@ function createSpeech({ modelsDir, config = {}, log = console.warn }) {
 
   let tts = null;
   const ttsDir = path.join(modelsDir, config.ttsModel || '');
-  // Два движка: Piper (VITS) — самый лёгкий; Supertonic 3 — естественнее, 10 голосов.
-  const supertonic = fs.existsSync(path.join(ttsDir, 'tts.json'));
+  // Supertonic 3: 10 голосов; ударения понимает по знаку U+0301 (его ставит lib/stress.js)
   // Полноточные файлы Supertonic (скачиваются установщиком по ttsPrecision) — чище звук, чуть медленнее
   const fp32Dir = path.join(modelsDir, 'supertonic-3-fp32');
   const precise = (part) => {
@@ -233,32 +232,19 @@ function createSpeech({ modelsDir, config = {}, log = console.warn }) {
     const file = path.join(fp32Dir, `${part}.onnx`);
     return wanted && fs.existsSync(file) ? file : pick(ttsDir, new RegExp(`^${part}.*\\.onnx$`));
   };
-  if (config.ttsModel && fs.existsSync(ttsDir)) {
+  if (config.ttsModel && fs.existsSync(path.join(ttsDir, 'tts.json'))) {
     try {
-      const model = supertonic
-        ? {
-            supertonic: {
-              durationPredictor: precise('duration_predictor'),
-              textEncoder: precise('text_encoder'),
-              vectorEstimator: precise('vector_estimator'),
-              vocoder: precise('vocoder'),
-              ttsJson: path.join(ttsDir, 'tts.json'),
-              unicodeIndexer: path.join(ttsDir, 'unicode_indexer.bin'),
-              voiceStyle: path.join(ttsDir, 'voice.bin'),
-            },
-          }
-        : {
-            vits: {
-              model: pick(ttsDir, /\.onnx$/),
-              tokens: path.join(ttsDir, 'tokens.txt'),
-              dataDir: path.join(ttsDir, 'espeak-ng-data'),
-              // Тембр: noiseScale — живость интонации, lengthScale > 1 — речь неспешнее
-              ...(config.ttsTuning || {}),
-            },
-          };
       tts = new sherpa.OfflineTts({
         model: {
-          ...model,
+          supertonic: {
+            durationPredictor: precise('duration_predictor'),
+            textEncoder: precise('text_encoder'),
+            vectorEstimator: precise('vector_estimator'),
+            vocoder: precise('vocoder'),
+            ttsJson: path.join(ttsDir, 'tts.json'),
+            unicodeIndexer: path.join(ttsDir, 'unicode_indexer.bin'),
+            voiceStyle: path.join(ttsDir, 'voice.bin'),
+          },
           numThreads: 2,
           provider: 'cpu',
           debug: 0,
@@ -435,17 +421,15 @@ function createSpeech({ modelsDir, config = {}, log = console.warn }) {
       return Promise.resolve(hit);
     }
     const job = queue.then(async () => {
-      const request = supertonic
-        ? {
-            text,
-            generationConfig: new sherpa.GenerationConfig({
-              sid,
-              speed,
-              numSteps: config.ttsSteps ?? 8, // больше шагов — чище звук, но медленнее
-              extra: { lang: 'ru' },
-            }),
-          }
-        : { text, sid, speed };
+      const request = {
+        text,
+        generationConfig: new sherpa.GenerationConfig({
+          sid,
+          speed,
+          numSteps: config.ttsSteps ?? 8, // больше шагов — чище звук, но медленнее
+          extra: { lang: 'ru' },
+        }),
+      };
       // enableExternalBuffer: false — Electron запрещает внешние буферы (V8 memory cage)
       const audio = await tts.generateAsync({ ...request, enableExternalBuffer: false });
       const result = { samples: trimSilence(audio.samples, audio.sampleRate), sampleRate: audio.sampleRate };

@@ -5,8 +5,30 @@ const { launch, listWindowedApps, closeProcessWindows, minimizeAll, defaultBrows
 
 let catalog = null;
 
+// Встроенные названия Windows: «параметры» — это параметры Windows, а не «Языковые параметры Office»
+const BUILTIN = {
+  параметры: 'ms-settings:',
+  'параметры windows': 'ms-settings:',
+  'настройки windows': 'ms-settings:',
+  'настройки компьютера': 'ms-settings:',
+  корзина: 'shell:RecycleBinFolder',
+  'панель управления': 'control.exe',
+};
+// Процесс браузера по умолчанию → его название в меню «Пуск»
+const BROWSER_APPS = { chrome: 'Google Chrome', msedge: 'Microsoft Edge', firefox: 'Firefox', browser: 'Yandex', opera: 'Opera', brave: 'Brave', vivaldi: 'Vivaldi' };
+
+async function findApp(name) {
+  const q = String(name || '').toLowerCase().trim();
+  if (BUILTIN[q]) return { name: q, target: BUILTIN[q] };
+  if (/^(браузер|browser|интернет)$/.test(q)) {
+    const proc = await defaultBrowserProcess();
+    return (proc && (await catalog.find(BROWSER_APPS[proc] || proc))) || null;
+  }
+  return catalog.find(name);
+}
+
 async function openTarget(target, ctx) {
-  if (target.startsWith('shell:AppsFolder\\')) return launch('explorer.exe', [target]); // приложения из Store и «Пуск»
+  if (target.startsWith('shell:') || target.startsWith('ms-settings:')) return launch('explorer.exe', [target]); // «Пуск», Store, параметры
   if (path.isAbsolute(target)) {
     const err = await ctx.openPath(target); // .exe, .lnk, папки
     if (err) throw new Error(err);
@@ -42,7 +64,7 @@ module.exports = {
   id: 'apps',
   platforms: ['win32'], // PowerShell и программы Windows
   title: 'открыть или закрыть любую программу, свернуть все окна',
-  keywords: ['откр', 'запус', 'закр', 'сверн', 'программ', 'прилож', 'окн', 'рабочий стол', 'телеграм', 'дискорд', 'стим', 'браузер', 'хром'],
+  keywords: ['откр', 'запус', 'закр', 'выруб', 'заверш', 'сверн', 'программ', 'прилож', 'окн', 'рабочий стол', 'телеграм', 'дискорд', 'стим', 'браузер', 'хром'],
   init: (ctx) => {
     catalog = createAppCatalog({ aliases: ctx.config.apps, discover: ctx.config.discoverApps !== false });
   },
@@ -54,7 +76,7 @@ module.exports = {
       arg: 'название программы, как его назвал пользователь',
       examples: [['открой телеграм', { addressed: true, say: 'Открываю Telegram, сэр.', actions: [{ tool: 'open_app', arg: 'телеграм' }] }]],
       run: async (name, ctx) => {
-        const found = name && (await catalog.find(name));
+        const found = name && (await findApp(name));
         if (!found) return { ok: false, message: `Не нашёл программу «${name}» в меню «Пуск», сэр.` };
         await openTarget(found.target, ctx);
         return { ok: true };

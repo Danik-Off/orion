@@ -40,6 +40,9 @@ function levenshtein(a, b) {
   return dp[b.length];
 }
 
+// Костяк согласных: «гугл» и «google», «хром» и «chrome», «ворд» и «word» пишутся по-разному, но звучат одинаково
+const skeleton = (w) => w.replace(/[aeiou]+/g, '').replace(/(.)\1+/g, '$1');
+
 function score(query, name) {
   const q = normalize(query);
   const n = normalize(name);
@@ -52,8 +55,13 @@ function score(query, name) {
   const words = n.split(' ');
   if (words.includes(q)) return 80;
   if (qc.length >= 4 && nc.includes(qc)) return 70;
+  // Каждое слово запроса звучит как слово названия: «гугл хром» → «Google Chrome»
+  const qWords = q.split(' ');
+  const nSkel = words.map(skeleton);
+  if (qWords.every((w) => skeleton(w).length >= 2 && nSkel.includes(skeleton(w)))) return qWords.length > 1 ? 66 : 62;
+  // Опечатки и недослышанное: до двух ошибок в длинных словах («продник» → «проводник»)
   const dist = Math.min(levenshtein(qc, nc), ...words.map((w) => levenshtein(q, w)));
-  const tolerance = qc.length >= 8 ? 2 : qc.length >= 5 ? 1 : 0;
+  const tolerance = qc.length >= 7 ? 2 : qc.length >= 5 ? 1 : 0;
   return dist <= tolerance ? 60 - dist * 5 : 0;
 }
 

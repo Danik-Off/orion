@@ -10,7 +10,6 @@
     "asrModel": "sherpa-onnx-streaming-zipformer-small-ru-vosk-int8-2025-08-16",
     "ttsModel": "sherpa-onnx-supertonic-3-tts-int8-2026-05-11",
     "ttsSpeed": 1,
-    "ttsTuning": {},
     "ttsSpeaker": 9,
     "listenOnStart": true,
     "wakeWords": [
@@ -61,6 +60,11 @@
         "/a"
       ],
       "confirm": false
+    }
+  },
+  "skills": {
+    "delegate": {
+      "enabled": true
     }
   }
 }

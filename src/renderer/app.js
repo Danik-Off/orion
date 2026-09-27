@@ -68,7 +68,9 @@ function addMsg(kind, text, sources) {
     for (const s of sources) {
       const a = document.createElement('a');
       a.href = '#';
-      a.textContent = s.title || s.url;
+      const label = document.createElement('span'); // многоточие работает только на обычном блоке, не на тексте во flex
+      label.textContent = s.title || s.url;
+      a.append(label);
       a.title = s.url;
       a.addEventListener('click', (e) => {
         e.preventDefault();
@@ -82,6 +84,19 @@ function addMsg(kind, text, sources) {
   log.scrollTop = log.scrollHeight;
   return el;
 }
+
+// Лента держится у нижнего края, пока её плавно поджимает выезжающая панель или подтверждение.
+// Свою же прокрутку не учитываем: к её событию лента успевает ужаться ещё на кадр и «уходит» от низа
+let logAtBottom = true;
+let pinnedTop = -1;
+log.addEventListener('scroll', () => {
+  if (log.scrollTop !== pinnedTop) logAtBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 4;
+});
+new ResizeObserver(() => {
+  if (!logAtBottom) return;
+  log.scrollTop = log.scrollHeight;
+  pinnedTop = log.scrollTop;
+}).observe(log);
 
 // --- Присутствие: полное окно / плашка в углу / скрыто -----------------------------
 
@@ -352,7 +367,7 @@ const speakerHooks = {
     refreshState();
   },
 };
-let speaker = createSpeaker({ usePiper: false, ...speakerHooks });
+let speaker = createSpeaker({ ownVoice: false, ...speakerHooks });
 let previewing = false; // «Прослушать» в настройках — это не ответ, разговор не заканчивается
 
 // --- Вкладка «Настройки» ------------------------------------------------------------
@@ -906,7 +921,7 @@ async function applySettings() {
   $('#name').textContent = name;
   $('#model').textContent = s.model;
   input.placeholder = `Напишите или скажите «${name}…»`;
-  speaker = createSpeaker({ usePiper: s.tts, ...speakerHooks });
+  speaker = createSpeaker({ ownVoice: s.tts, ...speakerHooks });
   micBtn.hidden = !s.stt;
   peopleBtn.hidden = !s.stt || !voices.available;
   peopleBtn.classList.toggle('on', voices.people.length > 0);

@@ -1,0 +1,116 @@
+{
+ "embedding": {
+  "rows": 126523,
+  "dim": 16,
+  "offset": 0,
+  "scale": 0.6355987191200256,
+  "zeroPoint": -11.361251831054688
+ },
+ "layers": {
+  "stress_clf.0.weight": {
+   "shape": [
+    64,
+    16
+   ],
+   "offset": 2024368
+  },
+  "stress_clf.0.bias": {
+   "shape": [
+    64
+   ],
+   "offset": 2028464
+  },
+  "stress_clf.2.weight": {
+   "shape": [
+    128,
+    64
+   ],
+   "offset": 2028720
+  },
+  "stress_clf.2.bias": {
+   "shape": [
+    128
+   ],
+   "offset": 2061488
+  },
+  "stress_clf.4.weight": {
+   "shape": [
+    64,
+    128
+   ],
+   "offset": 2062000
+  },
+  "stress_clf.4.bias": {
+   "shape": [
+    64
+   ],
+   "offset": 2094768
+  },
+  "stress_clf.6.weight": {
+   "shape": [
+    10,
+    64
+   ],
+   "offset": 2095024
+  },
+  "stress_clf.6.bias": {
+   "shape": [
+    10
+   ],
+   "offset": 2097584
+  },
+  "yo_clf.0.weight": {
+   "shape": [
+    64,
+    16
+   ],
+   "offset": 2097624
+  },
+  "yo_clf.0.bias": {
+   "shape": [
+    64
+   ],
+   "offset": 2101720
+  },
+  "yo_clf.2.weight": {
+   "shape": [
+    128,
+    64
+   ],
+   "offset": 2101976
+  },
+  "yo_clf.2.bias": {
+   "shape": [
+    128
+   ],
+   "offset": 2134744
+  },
+  "yo_clf.4.weight": {
+   "shape": [
+    64,
+    128
+   ],
+   "offset": 2135256
+  },
+  "yo_clf.4.bias": {
+   "shape": [
+    64
+   ],
+   "offset": 2168024
+  },
+  "yo_clf.6.weight": {
+   "shape": [
+    7,
+    64
+   ],
+   "offset": 2168280
+  },
+  "yo_clf.6.bias": {
+   "shape": [
+    7
+   ],
+   "offset": 2170072
+  }
+ },
+ "homodict": 2208
+}

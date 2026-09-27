@@ -6,7 +6,6 @@
 // закрыло приём продолжения (голос), после 2 минут тишины (переписка), при смене собеседника или по ↺.
 // Тогда полезное переносится в базу знаний собеседника, остальное забывается.
 
-const { normalizeForSpeech } = require('../lib/speech-text');
 const { similarity } = require('./memory');
 const { CHAT_TOPIC } = require('./skills');
 const { STOP } = require('./llm');
@@ -51,20 +50,54 @@ function parsePlan(raw, toolNames, allowed = () => true) {
   };
 }
 
+// Глагол фразы важнее выбора маленькой модели: «закрой дедлок» не может запускать игру. Модель копирует
+// пример «запусти дедлок» и прошлую реплику «Запускаю Deadlock», не замечая глагола, — поправляем план кодом.
+const CLOSE_VERB = /(?<!\p{L})(?:закр|выруб|заверш)\p{L}*/iu;
+const OPEN_VERB = /(?<!\p{L})(?:откр|запус|включ|вруб)\p{L}*/iu;
+const OPENERS = new Set(['open_app', 'steam_launch', 'open_url']);
+function guardCloseIntent(plan, text) {
+  if (!CLOSE_VERB.test(text) || OPEN_VERB.test(text) || !plan.actions.length) return plan;
+  const said = text.match(/(?:закр|выруб|заверш)\p{L}*\s+(?:(?:игру|программу|приложение)\s+)?(.+?)[.!?]*$/iu)?.[1]?.trim() || '';
+  let changed = false;
+  const actions = plan.actions.map((a) => {
+    if (OPENERS.has(a.tool)) {
+      changed = true;
+      return { tool: 'close_app', arg: a.tool === 'open_url' ? said || a.arg : a.arg || said };
+    }
+    // игру модель путает с самим Steam: «закрой дедлок» → close_app steam
+    if (a.tool === 'close_app' && /^(steam|стим)$/i.test(a.arg) && said && !/стим|steam/i.test(said)) {
+      changed = true;
+      return { ...a, arg: said };
+    }
+    return a;
+  });
+  const closing = actions.find((a) => a.tool === 'close_app');
+  // Реплика не должна обещать обратное: «Запускаю Steam», а окно закрывается
+  const contradicts = closing && /(?<!\p{L})(запуска|открыва|включа)/iu.test(plan.say);
+  if (!changed && !contradicts) return plan;
+  return { ...plan, actions, say: closing ? `Закрываю ${closing.arg}, сэр.` : plan.say, guarded: true };
+}
+
 // Потоковая речь: модель ещё пишет, а готовые предложения реплики уже можно говорить.
 // Только для разговора без действий — когда план уже не изменится: начало JSON должно быть
 // {"topic":"chat","actions":[],"say":"… (у фраз без имени перед ним "addressed":true).
 // Возвращает onText(накопленный JSON) и finish() — договорить остаток после конца ответа.
 // plain — поток обычного текста, а не JSON (ответ навыка: пересказ найденного поиском)
 const CHAT_PREFIX = /^\s*\{\s*(?:"addressed"\s*:\s*true\s*,\s*)?"topic"\s*:\s*"chat"\s*,\s*"actions"\s*:\s*\[\s*\]\s*,\s*"say"\s*:\s*"/;
-const SENTENCE_END = /[.!?…]+["»)]*(?=\s)/g;
-function createSayStreamer(onSentence, { plain = false } = {}) {
+// Точка после инициала или короткого сокращения («А. С. Пушкин», «г. Липецк», «т. е.») — не конец предложения:
+// нормализатор речи должен получить сокращение вместе с тем, к чему оно относится
+const SENTENCE_END = /(?:(?<!(?:^|[^\p{L}])(?:\p{L}|ул|пр|проф|им|ст|стр|рис|тел|кв|обл|ок|см|рт|напр))\.|[!?…])[.!?…]*["»)]*(?=\s)/gu;
+// hold(предложение) → true — придержать это предложение и всё после него до finish() (отказ «не умею»:
+// возможно, задачу передадут агенту, и отказ звучать не должен)
+function createSayStreamer(onSentence, { plain = false, hold = null } = {}) {
   let prefix = plain ? 0 : null; // длина начала JSON до текста реплики; null — ещё неясно, false — не наш случай
   let sent = 0; // сколько символов реплики уже отдано
   let text = '';
   let closed = false;
-  const emit = (upTo) => {
+  let held = false;
+  const emit = (upTo, force = false) => {
     const part = text.slice(sent, upTo).trim();
+    if (!force && (held || (hold && part && hold(part)))) return void (held = true);
     sent = upTo;
     if (part) onSentence(part);
   };
@@ -116,7 +149,7 @@ function createSayStreamer(onSentence, { plain = false } = {}) {
     if (prefix === false || prefix === null || (plain && !sent)) return;
     const done = text.slice(0, sent).trim();
     if (typeof full === 'string' && full.startsWith(done)) (text = full), (sent = done.length);
-    emit(text.length);
+    emit(text.length, true);
   };
   return { onText, finish, started: () => sent > 0 };
 }
@@ -146,6 +179,11 @@ function createSayCutter(speaks = () => false) {
   }
   return { onText, plan: () => cut };
 }
+
+// Модель отказалась сама: «я не умею создавать файлы», «не могу этого сделать», «нет доступа»
+const REFUSAL =
+  /(?<!\p{L})(?:не (?:умею|могу|способен|в состоянии|имею (?:возможности|доступа)|поддерживаю)|нет (?:возможности|доступа)|вне моих возможностей|мне не под силу|не входит в мои)(?!\p{L})/iu;
+const isRefusal = (say) => REFUSAL.test(String(say || '').replace(/ё/g, 'е'));
 
 // Просьбы сочинить — с обычной температурой (иначе анекдоты повторялись бы), остальное — почти без случайности
 const CREATIVE = /анекдот|шутк|пошути|сказк|стих|истори|придума|сочини|поздрав|тост|загадк|рассмеши/;
@@ -218,35 +256,40 @@ function createAssistant({ config, llm, skills, memory, audit, notify, onSession
   // --- промпт: неизменная часть первой (движок кэширует начало промпта), меняющаяся — в конце ---
 
   function staticPrompt() {
-    return `Ты — ${name}, персональный голосовой ИИ-ассистент. Говоришь по-русски.
-О себе говоришь в мужском роде. Обращайся к собеседнику так, как указано в поле «обращение» ниже («сэр» или «мисс»), и по имени, если оно известно.
-Действия выполняй только по просьбе: если человек просто рассказывает о себе или делится мнением — поддержи разговор, actions пустой.
+    return `Ты — ${name}, персональный голосовой ИИ-ассистент. Язык — русский. О себе — в мужском роде.
+Обращение к собеседнику — строго из поля «обращение» ниже («сэр» или «мисс»); имя — если известно.
+Действия — только по просьбе, вопросу или правилу навыка. Человек просто рассказывает о себе или делится мнением — поддержи разговор, actions пустой.
 
-Отвечай ОДНИМ JSON-объектом: {"topic": "...", "actions": [{"tool": "...", "arg": "..."}], "say": "..."}.
-"topic" — навык из каталога ниже, к которому относится просьба, или "chat", если это просто разговор.
-"actions" — от 0 до ${MAX_ACTIONS} действий по порядку; для разговора — пустой список.
-"say" — текст для озвучки: обычно 1–2 предложения; если просят рассказать (анекдот, историю, объяснение) — до 6 предложений.
-Числа, даты и годы пиши цифрами (их правильно прочитает озвучка). Ставь букву «ё» (ещё, всё, идёт, её).
-Без эмодзи, markdown, скобок и списков. Текущие дата и время указаны ниже — бери их оттуда.
-Сообщай только то, в чём уверен; если не знаешь — так и скажи или предложи поискать. Не выдумывай имена, даты и события.
-Ты можешь свободно разговаривать: шутить, рассказывать анекдоты и истории, советовать, объяснять — для этого инструменты не нужны.
+Ответ — ровно один JSON-объект: {"topic": "...", "actions": [{"tool": "...", "arg": "..."}], "say": "..."}.
+"topic" — навык из каталога ниже, к которому относится просьба (несколько действий — навык первого), или "chat", если это просто разговор.
+"actions" — от 0 до ${MAX_ACTIONS} действий, выполняются по порядку; для разговора — пустой список.
+Несколько задач в одной фразе — отдельное действие на каждую, в порядке фразы. Ни одну не пропускай.
+Одна задача — одно действие. Без повторов и без действий, о которых не просили.
+"say" — текст для озвучки: 1–2 предложения; просят рассказать (анекдот, историю, объяснение) — до 6.
+Числа, даты, годы — цифрами. Всегда буква «ё» (ещё, всё, идёт, её).
+Запрещено: эмодзи, markdown, скобки, списки. Дата и время — только из строки «Сейчас» ниже.
+Только то, в чём уверен. Не знаешь — так и скажи или предложи поискать. Имена, даты, события не выдумывай.
+Фраза без смысла (обрывок распознавания, одно непонятное слово) — переспроси: «Не расслышал, сэр. Повторите?». Смысл не угадывай.
+Разговор, шутки, анекдоты, истории, советы, объяснения — без инструментов.
 
-Фраза с пометкой [без обращения] услышана без твоего имени сразу после твоего ответа — тогда первым полем идёт "addressed".
-Обычно это продолжение разговора с тобой — addressed=true. addressed=false ТОЛЬКО если это явно не тебе:
-люди обсуждают что-то между собой, обращаются друг к другу, телевизор, бессвязный набор слов. Тогда say и actions пустые.
+Пометка [без обращения] — фраза услышана без твоего имени сразу после твоего ответа. Тогда первое поле — "addressed".
+По умолчанию addressed=true: это продолжение разговора с тобой. addressed=false — ТОЛЬКО если фраза явно не тебе:
+люди говорят между собой, обращаются друг к другу, телевизор, бессвязный набор слов. Тогда say и actions пустые.
 
 Твои навыки (каталог: id и что умеет):
 ${skills.catalogPrompt()}
-Инструменты навыков, нужных этой фразе, описаны в конце, в разделе «Инструменты для этой фразы». Вызывай только их.
-Если просьба подходит под инструмент — вызови его, а не отвечай по памяти: числа, даты, отчёты, новости и свежие факты не придумывай.
-Если нужный навык есть в каталоге, но его инструментов в том разделе нет — просто назови его в topic, я подгружу его и спрошу снова.
-Если подходящего навыка нет и в каталоге — topic "chat" и честно скажи, что пока так не умеешь.
+Инструменты нужных этой фразе навыков — в конце, в разделе «Инструменты для этой фразы». Вызывай только их.
+Просьба или вопрос подходит под инструмент или правило навыка — вызови инструмент. По памяти не отвечай: числа, даты, отчёты, новости, свежие факты не выдумывай.
+Навык есть в каталоге, но его инструментов в том разделе нет — назови его в topic, я подгружу его и спрошу снова.
+Навыка нет и в каталоге — topic "chat", честно скажи, что пока так не умеешь.
 
 Примеры (навык: действия + ответ):
 "как дела" → chat: ответ «Все системы в норме, сэр.»
 "который час и какое число" → chat: ответ «Сейчас 14:05, 3 марта, вторник.»
 "я сегодня так устал" → chat: ответ «Сочувствую, сэр. Может, включить что-нибудь спокойное?» — рассказ о себе, а не команда
 "закипёж" → chat: ответ «Не расслышал, сэр. Повторите?» — обрывок распознавания без смысла: не угадывай и не выдумывай, что имелось в виду
+"открой телеграм и включи музыку" → apps: open_app("телеграм") + youtube("музыка микс") + ответ «Открываю Telegram и включаю музыку, сэр.» — две задачи, два действия
+"какая погода и почём доллар" → weather: weather("") + rate("USD") + ответ «Сейчас посмотрю, сэр.» — две задачи, два действия
 [без обращения] "а что ты вообще умеешь?" → addressed=true, chat: ответ «Погода, музыка, программы, поиск, напоминания и многое другое, сэр.»
 [без обращения] "ну я ему и говорю, а он молчит" → addressed=false: без действий и без ответа
 [без обращения] "пап, ты ключи от машины не видел" → addressed=false: без действий и без ответа`;
@@ -384,7 +427,8 @@ ${skills.detailsPrompt(skillIds) || '(не нужны — просто отве�
     const personId = who?.id ?? null;
     const mem = memory.forPerson(personId);
     const honorific = personId ? who?.honorific || 'сэр' : '';
-    const sayPart = onSay && ((s) => !signal?.aborted && onSay(normalizeForSpeech(applyHonorific(s, honorific))));
+    // Ответ — в том виде, как его написали (цифрами): окно показывает его так, а для речи его готовит синтез (main.js)
+  const sayPart = onSay && ((s) => !signal?.aborted && onSay(applyHonorific(s, honorific)));
 
     // Продолжение без имени проверяет модель («это мне?»), кроме очевидных случаев.
     // Голос подтверждён как тот же собеседник — верим ему; спрашиваем модель, только если фраза
@@ -395,10 +439,11 @@ ${skills.detailsPrompt(skillIds) || '(не нужны — просто отве�
     if (isResetDialog(text)) {
       await endSession('новый разговор');
       audit({ input: text, source, person: personId, reset: true });
-      return { say: normalizeForSpeech(applyHonorific('Начнём с чистого листа, сэр.', honorific)), actions: [] };
+      return { say: applyHonorific('Начнём с чистого листа, сэр.', honorific), actions: [] };
     }
     let plan = skills.quickPlan(text) || whoAmIPlan(text, who, mem, source);
     if (!plan) plan = await makePlan(followup ? `[без обращения] ${text}` : text, { query: text, who, mem, history: session.turns, followup, onSay: sayPart });
+    plan = guardCloseIntent(plan, text);
     audit({ input: text, source, person: personId, plan });
     // Человек договаривает или перебил новой командой — этот план уже не нужен, действия не выполняем
     if (signal?.aborted) return { cancelled: true };
@@ -421,7 +466,7 @@ ${skills.detailsPrompt(skillIds) || '(не нужны — просто отве�
     if (plan.actions.length && plan.say) notify(applyHonorific(plan.say, honorific));
     // Медленный навык (поиск, состояние ПК) — сразу сказать короткое «Сейчас поищу», пока он работает
     const filler = plan.actions.length === 1 && skills.fillerOf?.(plan.actions[0].tool);
-    if (filler && onFiller && !signal?.aborted) onFiller(normalizeForSpeech(applyHonorific(filler, honorific)));
+    if (filler && onFiller && !signal?.aborted) onFiller(applyHonorific(filler, honorific));
 
     // Единственный навык может говорить ответ по мере готовности (поиск: модель пересказывает найденное)
     const skillStream = plan.actions.length === 1 && sayPart ? createSayStreamer(sayPart, { plain: true }) : null;
@@ -431,9 +476,7 @@ ${skills.detailsPrompt(skillIds) || '(не нужны — просто отве�
     const skillStreamed = !!skillStream?.started() && spoken.length === 1 && !problems.length && !signal?.aborted;
     if (skillStreamed) skillStream.finish(spoken[0]);
     // Настоящие данные и сообщения навыков важнее заготовленной фразы
-    const written = applyHonorific(spoken.length || problems.length ? [...spoken, ...problems].join(' ') : plan.say, honorific);
-    // Ответ сразу в произносимом виде: числа словами, «ё» — и в окне, и в речи одинаково
-    const say = normalizeForSpeech(written);
+    const say = applyHonorific(spoken.length || problems.length ? [...spoken, ...problems].join(' ') : plan.say, honorific);
 
     // Навыки этой реплики остаются «под рукой» на пару следующих («а завтра?» после погоды)
     const used = plan.actions.map((a) => skills.skillOf(a.tool)).filter(Boolean);
@@ -443,7 +486,7 @@ ${skills.detailsPrompt(skillIds) || '(не нужны — просто отве�
     const topic = used[0] || (plan.topic && plan.topic !== CHAT_TOPIC ? plan.topic : CHAT_TOPIC);
     session.turns.push(
       { role: 'user', content: text },
-      { role: 'assistant', content: JSON.stringify({ topic, actions: plan.actions, say: written }) },
+      { role: 'assistant', content: JSON.stringify({ topic, actions: plan.actions, say }) },
     );
     session.turns = session.turns.slice(-SESSION_TURNS * 2);
     touchSession();
@@ -483,10 +526,25 @@ ${skills.detailsPrompt(skillIds) || '(не нужны — просто отве�
     };
 
     const ids = skills.select(query, session.recent);
+    // Навык, которому уходят просьбы, от которых модель отказалась («не умею») — агент Claude Code / Codex
+    const fallback = skills.fallback?.() || null;
     // Говорить по ходу можно, только если план уже не переспросят: у разговорного ответа (topic chat)
-    // повтор бывает лишь с подсказкой навыка по словам фразы — тогда и не начинаем
-    const streamer = onSay && (creative || !skills.likely(query)) ? createSayStreamer(onSay) : null;
+    // повтор бывает лишь с подсказкой навыка по словам фразы — тогда и не начинаем. Отказ придерживаем:
+    // его могут заменить передачей задачи
+    const streamer = onSay && (creative || !skills.likely(query)) ? createSayStreamer(onSay, { hold: fallback ? isRefusal : null }) : null;
     const plan = await ask(ids, undefined, streamer?.onText);
+    // Модель ответила «не умею» — переспросить с навыком-запасным: просьбу что-то сделать она передаст ему,
+    // а на отказ в разговоре («я не могу чувствовать») ответит как раньше
+    if (fallback && plan.addressed !== false && !plan.actions.length && isRefusal(plan.say)) {
+      const retry = await ask(
+        [...new Set([...ids, fallback])],
+        `подсказка: ты ответил, что не можешь. Если это просьба что-то сделать (создать, написать, настроить, оптимизировать, разобраться) — передай её инструментом навыка ${fallback}; если это просто разговор — ответь как обычно`,
+      );
+      // Засчитываем только передачу: другое действие после «не умею» («сходи в магазин» → напоминание) никто не просил
+      const passed = retry.actions.length > 0 && retry.actions.every((a) => skills.skillOf(a.tool) === fallback);
+      audit({ skillFallback: fallback, input: query, used: passed });
+      if (passed) return retry;
+    }
     if (streamer?.started()) {
       streamer.finish(plan.say);
       return { ...plan, streamed: true };
@@ -526,7 +584,7 @@ ${skills.detailsPrompt(skillIds) || '(не нужны — просто отве�
     const depth = (request.performDepth || 0) + 1;
     if (depth > 2) return 'Сценарий слишком глубоко вложен.';
     const mem = request.memory || memory.guest;
-    const plan = skills.quickPlan(text) || (await makePlan(text, { query: text, who: request.person || null, mem }));
+    const plan = guardCloseIntent(skills.quickPlan(text) || (await makePlan(text, { query: text, who: request.person || null, mem })), text);
     audit({ perform: text, plan });
     const { spoken, problems } = await runActions(plan.actions, { ...request, text, memory: mem, performDepth: depth });
     return [...spoken, ...problems].join(' ') || (plan.actions.length ? '' : plan.say);
@@ -545,4 +603,4 @@ ${skills.detailsPrompt(skillIds) || '(не нужны — просто отве�
   return { handle, perform, warmup, endSession, reset: () => endSession('новый разговор') };
 }
 
-module.exports = { createAssistant, createSayStreamer, parsePlan, planSchema, looksLikeContinuation, looksAddressed, talksToOther, applyHonorific, MAX_ACTIONS };
+module.exports = { createAssistant, createSayStreamer, isRefusal, parsePlan, planSchema, guardCloseIntent, looksLikeContinuation, looksAddressed, talksToOther, applyHonorific, MAX_ACTIONS };

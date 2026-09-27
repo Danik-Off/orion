@@ -219,6 +219,7 @@ module.exports = {
   ],
   rules: [
     'Запустить игру из Steam — steam_launch (не open_app); программу — open_app.',
+    '«Закрой / выруби игру» — close_app с названием игры (не steam_launch и не «steam»): Steam игры не закрывает.',
     '«Сколько я наиграл», «во что я играл» — steam_stats; «сколько стоит игра», «есть ли скидка» — steam_price, а не поиск.',
   ],
   tools: [
@@ -226,7 +227,10 @@ module.exports = {
       name: 'steam_launch',
       use: 'запустить игру из Steam',
       arg: 'название игры, как его сказали',
-      examples: [['запусти дедлок', { addressed: true, say: '', actions: [{ tool: 'steam_launch', arg: 'дедлок' }] }]],
+      examples: [
+        ['запусти дедлок', { addressed: true, say: '', actions: [{ tool: 'steam_launch', arg: 'дедлок' }] }],
+        ['закрой дедлок', { addressed: true, say: 'Закрываю Deadlock.', actions: [{ tool: 'close_app', arg: 'дедлок' }] }],
+      ],
       run: launchGame,
     },
     {

@@ -223,6 +223,10 @@ svg {
   background: rgba(8, 18, 27, 0.92);
   font-size: 13px;
   line-height: 1.45;
+}
+/* Панель и подтверждение появляются переходами — см. «Появление и исчезновение» ниже */
+.restart-bar,
+.settings-error {
   animation: rise 0.2s ease-out;
 }
 .confirm,
@@ -233,8 +237,6 @@ svg {
   background: repeating-linear-gradient(-45deg, rgba(255, 180, 92, 0.05) 0 6px, transparent 6px 12px), rgba(20, 14, 6, 0.9);
   color: var(--warn);
 }
-.panel[hidden],
-.confirm[hidden],
 .restart-bar[hidden],
 .settings-error[hidden] {
   display: none;
@@ -905,7 +907,7 @@ body.mode-full .app:has(.log > .msg) .setup {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  max-width: 170px;
+  max-width: min(100%, 200px);
   padding: 2px 8px 2px 6px;
   border-radius: var(--r);
   border: 1px solid var(--line);
@@ -914,9 +916,6 @@ body.mode-full .app:has(.log > .msg) .setup {
   font-family: var(--font-mono);
   font-size: 10.5px;
   text-decoration: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
 }
@@ -927,6 +926,12 @@ body.mode-full .app:has(.log > .msg) .setup {
   flex-shrink: 0;
   background: var(--accent);
   box-shadow: 0 0 4px var(--accent);
+}
+.sources a span {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .sources a:hover {
   border-color: var(--accent-dim);
@@ -978,12 +983,43 @@ body.mode-full .app:has(.log > .msg) .setup {
 }
 
 /* --- Панель (люди и голоса, запись голоса) --- */
+/* Когда места мало, панель ужимается и прокручивается, а не выталкивает строку ввода за край окна */
 .panel {
   max-height: 55%;
+  min-height: 0;
   overflow-y: auto;
   margin: 0 var(--pad) 10px;
   padding: 12px 14px;
+}
+/* Панель на пустом экране встаёт на место подсказок, реактор уменьшается — всё помещается в окно.
+   Подсказки сворачиваются по высоте, реактор ужимается переходом (как и сама панель) */
+.hints {
+  interpolate-size: allow-keywords;
   flex-shrink: 0;
+  min-height: 0; /* иначе flex держит минимум по содержимому: сворачивание и разворот съезжают рывком */
+  transition: height 0.28s cubic-bezier(0.22, 1, 0.36, 1), padding-bottom 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s, visibility 0.28s;
+}
+.app:has(> .panel:not([hidden], .modal)) .hints {
+  height: 0;
+  padding-bottom: 0;
+  overflow: clip;
+  opacity: 0;
+  visibility: hidden;
+}
+body.mode-full .app:not(:has(.log > .msg)) .stage,
+body.mode-full .app:not(:has(.log > .msg)) .captions {
+  transition: padding 0.28s cubic-bezier(0.22, 1, 0.36, 1), margin 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+body.mode-full .app:not(:has(.log > .msg)):has(> .panel:not([hidden], .modal)) .stage {
+  padding-top: 14px;
+  padding-bottom: 10px;
+}
+body.mode-full .app:not(:has(.log > .msg)):has(> .panel:not([hidden], .modal)) .core {
+  width: 92px;
+  height: 92px;
+}
+body.mode-full .app:not(:has(.log > .msg)):has(> .panel:not([hidden], .modal)) .captions {
+  margin-top: 18px;
 }
 /* Модальная панель — посреди окна поверх затемнения */
 .backdrop {
@@ -991,15 +1027,6 @@ body.mode-full .app:has(.log > .msg) .setup {
   inset: 0;
   z-index: 19;
   background: rgba(2, 8, 13, 0.78);
-  animation: fade 0.2s ease-out;
-}
-.backdrop[hidden] {
-  display: none;
-}
-@keyframes fade {
-  from {
-    opacity: 0;
-  }
 }
 .panel.modal {
   position: absolute;
@@ -1034,6 +1061,90 @@ body.mode-full .app:has(.log > .msg) .setup {
   justify-content: flex-end;
   gap: 6px;
   margin-top: 12px;
+}
+/* Одна-две кнопки — справа; больше — ровными рядами во всю ширину, главная — отдельной строкой сверху */
+.panel-actions:has(> .btn:nth-child(3)) .btn {
+  flex: 1 1 auto;
+  padding: 0 10px;
+}
+.panel-actions:has(> .btn:nth-child(3)) .btn.primary {
+  flex-basis: 100%;
+}
+
+/* --- Появление и исчезновение панели, затемнения и подтверждения ---
+   Переходы, а не keyframes: прерванный на полпути переход плавно разворачивается обратно.
+   app.js лишь ставит и снимает hidden; display: none наступает в конце перехода (allow-discrete),
+   а начальная точка появления задана в @starting-style. Карточки в ленте едут и по высоте
+   (interpolate-size — до height: auto), поэтому лента и реактор сдвигаются плавно, без прыжка */
+.panel,
+.confirm,
+.backdrop {
+  interpolate-size: allow-keywords;
+  transition-property: opacity, transform, height, margin-bottom, padding-top, padding-bottom, border-top-width, border-bottom-width, display;
+  transition-behavior: allow-discrete;
+  transition-duration: 0.28s;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+.panel[hidden],
+.confirm[hidden],
+.backdrop[hidden] {
+  display: none;
+  pointer-events: none;
+  transition-duration: 0.2s;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* Свёрнутое состояние: отсюда карточка появляется и сюда уходит */
+.panel[hidden],
+.confirm[hidden],
+.backdrop[hidden] {
+  opacity: 0;
+}
+.panel:not(.modal)[hidden],
+.confirm[hidden] {
+  height: 0;
+  margin-bottom: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-top-width: 0;
+  border-bottom-width: 0;
+}
+.panel.modal[hidden] {
+  transform: scale(0.96);
+}
+@starting-style {
+  /* :not([hidden]) — чтобы перебить обычные правила .confirm ниже по файлу */
+  .panel:not([hidden]),
+  .confirm:not([hidden]),
+  .backdrop:not([hidden]) {
+    opacity: 0;
+  }
+  .panel:not(.modal):not([hidden]),
+  .confirm:not([hidden]) {
+    height: 0;
+    margin-bottom: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-top-width: 0;
+    border-bottom-width: 0;
+  }
+  .panel.modal:not([hidden]) {
+    transform: scale(0.96);
+  }
+}
+/* Пока карточка едет по высоте, содержимое в неё не помещается: подтверждение просто обрезаем,
+   а у панели (она прокручивается) место под полосу прокрутки занято всегда — текст не перескакивает
+   при её появлении, — и сама полоса видна только под курсором */
+.confirm {
+  overflow: clip;
+}
+.panel {
+  scrollbar-gutter: stable;
+}
+.panel::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+.panel:not([hidden]):hover::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
 }
 
 /* --- Подтверждение опасного действия --- */
@@ -1210,6 +1321,7 @@ body.mode-orb .caption:empty {
   padding: 4px var(--pad) 20px;
   user-select: text;
   counter-reset: section;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 12px); /* как у ленты: край под вкладками мягкий */
 }
 .settings[hidden] {
   display: none;
@@ -1288,6 +1400,7 @@ body.mode-orb .caption:empty {
 .field > span:first-child {
   display: flex;
   justify-content: space-between;
+  align-items: baseline; /* значение ползунка — на одной линии с подписью */
   gap: 8px;
 }
 .field b {
@@ -1366,6 +1479,11 @@ body.mode-orb .caption:empty {
 }
 .check span {
   flex: 1;
+}
+/* Пояснение к переключателю — своей строкой под подписью, а не переносом посреди неё */
+.check span small {
+  display: block;
+  margin-top: 2px;
 }
 .check input {
   order: 1;

@@ -24,6 +24,7 @@ const FIELDS = {
   'speech.ttsSpeed': { check: number(0.6, 1.6, 0.05), live: true },
   'speech.ttsSpeaker': { check: number(0, 9, 1), live: true },
   'speech.ttsSteps': { check: oneOf(8, 12, 16), live: true },
+  'speech.stress': { check: bool, live: true },
   'speech.followUpSeconds': { check: number(3, 20, 1), live: true },
   'speech.listenOnStart': { check: bool, live: true }, // действует при следующем запуске, перезапуск не нужен
   'speech.echoCancellation': { check: bool, live: false },

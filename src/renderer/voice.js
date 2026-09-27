@@ -1,4 +1,4 @@
-// Голос: микрофон → распознавание в main, и озвучка ответов (Piper или системный голос).
+// Голос: микрофон → распознавание в main, и озвучка ответов (свой голос Supertonic или, пока его нет, системный).
 
 // Микрофон. Звук дальше этого окна и main-процесса никуда не уходит.
 function createMic({ onChange, onLevel, echoCancellation = () => true }) {
@@ -41,13 +41,19 @@ function createMic({ onChange, onLevel, echoCancellation = () => true }) {
 }
 
 // Озвучка: предложения синтезируются по одному и ставятся в очередь — первое звучит почти сразу.
-function createSpeaker({ usePiper, onStart, onEnd }) {
+function createSpeaker({ ownVoice, onStart, onEnd }) {
   let ctx = null;
   let generation = 0;
   let sources = [];
 
+  // Конец предложения — знак, пробел и заглавная (цифра, кавычка): «26.09.2026», «84.34», «т. е. это» не режем —
+  // нормализатор речи должен увидеть дату или сокращение целиком, иначе «26.» и «09.» прочтёт порознь.
+  // Точка после инициала или короткого сокращения («А. С. Пушкин», «г. Липецк», «ул. Ленина») — тоже не конец.
   const sentences = (text) =>
-    (text.match(/[^.!?…]+[.!?…]*/g) || [text]).map((s) => s.trim()).filter(Boolean);
+    text
+      .split(/(?<=[.!?…]["»)]*)(?<!(?:^|[^\p{L}])(?:\p{L}|ул|пр|проф|им|ст|стр|рис|тел|кв|обл|ок|см|рт|напр)\.)\s+(?=[«"(]?[А-ЯЁA-Z\d])/u)
+      .map((s) => s.trim())
+      .filter(Boolean);
 
   // Первое предложение — до первой запятой: время синтеза растёт с длиной фразы (5,6 с речи — 1,3 с ожидания,
   // 2 с речи — 0,4 с), а остаток синтезируется, пока звучит начало
@@ -117,7 +123,7 @@ function createSpeaker({ usePiper, onStart, onEnd }) {
         }
         const sentence = queue.shift();
         working = true;
-        if (!usePiper) {
+        if (!ownVoice) {
           const u = new SpeechSynthesisUtterance(sentence);
           u.lang = 'ru-RU';
           const ru = speechSynthesis.getVoices().filter((v) => v.lang.startsWith('ru'));

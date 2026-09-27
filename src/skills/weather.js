@@ -149,7 +149,7 @@ async function forecast(arg, defaultCity) {
 
   const f = await forecastFor(place);
   const where = `в городе ${place.name}`;
-  const rain = (p) => (p >= 30 ? ` Вероятность осадков ${p} процентов.` : '');
+  const rain = (p) => (p >= 30 ? ` Вероятность осадков ${p} ${plural(p, 'процент', 'процента', 'процентов')}.` : '');
   const d = f.daily;
   const oneDay = (i) =>
     `${WMO[d.weather_code[i]] || 'без осадков'}, от ${signed(d.temperature_2m_min[i])} до ${degrees(d.temperature_2m_max[i])}`;
