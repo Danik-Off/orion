@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Орион</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="mode-full">
+    <svg class="sprite" aria-hidden="true">
+      <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></symbol>
+      <symbol id="i-mic-off" viewBox="0 0 24 24"><path d="M15 10V6a3 3 0 0 0-5.7-1.3M9 9v2a3 3 0 0 0 4.9 2.3M5 11a7 7 0 0 0 11.3 5.5M19 11a7 7 0 0 1-.6 2.8M12 18v3M3 3l18 18" /></symbol>
+      <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4zM16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" /></symbol>
+      <symbol id="i-sound-off" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4zM17 9l5 6M22 9l-5 6" /></symbol>
+      <symbol id="i-new" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4h4" /></symbol>
+      <symbol id="i-hide" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></symbol>
+      <symbol id="i-owner" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6" /></symbol>
+    </svg>
+
+    <main class="app">
+      <header class="bar">
+        <div class="drag">
+          <span class="logo" aria-hidden="true"></span>
+          <div class="title">
+            <span id="name">Орион</span>
+            <span id="model" class="sub"></span>
+          </div>
+        </div>
+        <div class="tools">
+          <button id="mic" class="icon" title="Микрофон" aria-pressed="false" hidden>
+            <svg><use href="#i-mic-off" /></svg>
+          </button>
+          <button id="owner" class="icon" title="Люди и голоса" hidden>
+            <svg><use href="#i-owner" /></svg>
+          </button>
+          <button id="voice" class="icon on" title="Озвучка ответов" aria-pressed="true">
+            <svg><use href="#i-sound" /></svg>
+          </button>
+          <button id="reset" class="icon" title="Новый разговор"><svg><use href="#i-new" /></svg></button>
+          <button id="hide" class="icon" title="Скрыть в трей (Esc)"><svg><use href="#i-hide" /></svg></button>
+        </div>
+      </header>
+
+      <nav class="tabs" role="tablist">
+        <button class="tab on" data-view="chat" role="tab" aria-selected="true">Разговор</button>
+        <button class="tab" data-view="settings" role="tab" aria-selected="false">Настройки</button>
+      </nav>
+
+      <section id="settings" class="settings" hidden>
+        <div id="restart-bar" class="restart-bar" hidden>
+          <span>Часть изменений заработает после перезапуска.</span>
+          <button id="restart" class="btn primary">Перезапустить</button>
+        </div>
+        <div id="settings-error" class="settings-error" hidden></div>
+
+        <h3>Основное</h3>
+        <div class="group">
+          <label class="field">
+            <span>Имя ассистента</span>
+            <input data-key="name" maxlength="20" />
+            <small>На него же откликается голосом. После перезапуска.</small>
+          </label>
+          <label class="field">
+            <span>Город для погоды</span>
+            <input data-key="city" maxlength="60" />
+          </label>
+          <label class="field">
+            <span>Движок языковой модели</span>
+            <select data-key="backend" id="backend-select">
+              <option value="llamacpp">Встроенный (llama.cpp)</option>
+              <option value="ollama">Ollama — отдельная программа</option>
+            </select>
+            <small>Встроенный скачивается сам и лежит в папке models рядом с программой. После перезапуска.</small>
+          </label>
+          <label class="field">
+            <span>Языковая модель</span>
+            <select data-key="model" id="model-select"></select>
+            <small id="model-hint"></small>
+          </label>
+          <label class="field">
+            <span>Горячая клавиша</span>
+            <input data-key="hotkey" id="hotkey-input" readonly />
+            <small>Нажмите на поле и затем нужное сочетание.</small>
+          </label>
+        </div>
+
+        <h3>Голос</h3>
+        <div class="group">
+          <label class="field">
+            <span>Голос</span>
+            <div class="row">
+              <select data-key="speech.ttsSpeaker" data-type="number" id="speaker-select"></select>
+              <button type="button" id="voice-test" class="btn">Прослушать</button>
+            </div>
+          </label>
+          <label class="field">
+            <span>Скорость речи <b data-out="speech.ttsSpeed"></b></span>
+            <input type="range" data-key="speech.ttsSpeed" data-type="number" min="0.6" max="1.6" step="0.05" />
+          </label>
+          <label class="field">
+            <span>Качество звука</span>
+            <select data-key="speech.ttsSteps" data-type="number">
+              <option value="8">Быстро</option>
+              <option value="12">Обычно</option>
+              <option value="16">Чисто (медленнее)</option>
+            </select>
+          </label>
+        </div>
+
+        <h3>Слух</h3>
+        <div class="group">
+          <label class="field">
+            <span>Ждать продолжения разговора, с <b data-out="speech.followUpSeconds"></b></span>
+            <input type="range" data-key="speech.followUpSeconds" data-type="number" min="3" max="20" step="1" />
+            <small>Сколько после ответа можно говорить без имени.</small>
+          </label>
+          <label class="field">
+            <span>Чувствительность к тихой речи <b data-out="speech.vadThreshold"></b></span>
+            <input type="range" data-key="speech.vadThreshold" data-type="number" min="0.15" max="0.6" step="0.05" />
+            <small>Меньше — слышит тише, но чаще реагирует на шум. После перезапуска.</small>
+          </label>
+          <label class="field">
+            <span>Слушать только знакомые голоса</span>
+            <select data-key="speech.speaker.require">
+              <option value="off">Нет, слушать всех</option>
+              <option value="followup">В продолжении разговора</option>
+              <option value="always">Всегда</option>
+            </select>
+          </label>
+          <label class="check">
+            <input type="checkbox" data-key="speech.listenOnStart" />
+            <span>Включать микрофон при запуске</span>
+          </label>
+          <label class="check">
+            <input type="checkbox" data-key="speech.echoCancellation" />
+            <span>Подавлять свой голос из колонок <small>(после перезапуска)</small></span>
+          </label>
+        </div>
+
+        <h3>Обновления</h3>
+        <div class="group">
+          <label class="check">
+            <input type="checkbox" data-key="updates.notify" />
+            <span>Сообщать о новой версии при запуске <small>(спрошу голосом, обновлять ли)</small></span>
+          </label>
+          <div class="field">
+            <span>Версия <b id="app-version"></b></span>
+            <div class="row">
+              <button type="button" id="update-check" class="btn">Проверить сейчас</button>
+            </div>
+          </div>
+        </div>
+
+        <h3>Навыки</h3>
+        <small class="note">Отключённые навыки пропадут после перезапуска.</small>
+        <div id="skills-list" class="skills-list group"></div>
+      </section>
+
+      <section class="stage">
+        <button id="core" class="core" data-state="idle" title="Нажмите и говорите">
+          <span class="ring r1"></span>
+          <span class="ring r2"></span>
+          <span class="ring r3"></span>
+          <span class="sweep"></span>
+          <span class="dot"></span>
+        </button>
+        <div class="captions">
+          <div id="status" class="status"></div>
+          <div id="caption" class="caption"></div>
+          <div id="setup" class="setup" hidden>
+            <div id="setup-title" class="setup-title"></div>
+            <div class="setup-bar"><span id="setup-fill"></span></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="log" class="log" aria-live="polite"></section>
+
+      <div id="hints" class="hints">
+        <button class="chip">Какая погода?</button>
+        <button class="chip">Почём доллар?</button>
+        <button class="chip">Включи музыку</button>
+        <button class="chip">Открой Telegram</button>
+        <button class="chip">Напомни через 10 минут размяться</button>
+      </div>
+
+      <div id="backdrop" class="backdrop" hidden></div>
+      <div id="panel" class="panel" hidden>
+        <div id="panel-text" class="panel-text"></div>
+        <div id="panel-field"></div>
+        <div id="panel-actions" class="panel-actions"></div>
+      </div>
+
+      <div id="confirm" class="confirm" hidden>
+        <span id="confirm-text"></span>
+        <button id="confirm-yes" class="btn primary">Да</button>
+        <button id="confirm-no" class="btn">Нет</button>
+      </div>
+
+      <form id="form" class="composer">
+        <input id="input" autocomplete="off" maxlength="1000" placeholder="Напишите или скажите «Орион…»" />
+        <button class="send" title="Отправить"><svg><use href="#i-send" /></svg></button>
+      </form>
+    </main>
+
+    <script src="voice.js"></script>
+    <script src="settings.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

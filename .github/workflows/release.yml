@@ -1,0 +1,55 @@
+# Выпуск версии: git tag v1.2.3 && git push --tags (или npm version patch && git push --follow-tags).
+# 1) черновик релиза → 2) установщики для Windows, macOS, Linux выкладываются в него → 3) релиз публикуется.
+# После публикации установленные копии Ориона при запуске найдут обновление (latest*.yml в релизе).
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  draft:
+    name: Черновик релиза
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Тег совпадает с версией в package.json
+        run: |
+          V=$(node -p "require('./package.json').version")
+          if [ "v$V" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Тег $GITHUB_REF_NAME, а в package.json версия $V. Поднимите версию: npm version $GITHUB_REF_NAME"
+            exit 1
+          fi
+
+      - name: Создать черновик
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft \
+              --title "Орион $GITHUB_REF_NAME" --generate-notes
+
+  build:
+    name: Сборка
+    needs: draft
+    uses: ./.github/workflows/build.yml
+    with:
+      publish: true
+    secrets: inherit
+
+  publish:
+    name: Публикация
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Опубликовать релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest

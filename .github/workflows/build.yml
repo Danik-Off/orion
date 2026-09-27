@@ -1,0 +1,81 @@
+# Сборка установщиков на трёх ОС. Вызывается из ci.yml (просто собрать) и release.yml (собрать и выложить в релиз).
+name: Build
+
+on:
+  workflow_call:
+    inputs:
+      publish:
+        description: Выложить установщики в черновик релиза GitHub
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+          - name: macOS
+            os: macos-latest
+          - name: Linux
+            os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Зависимости
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1' # Electron для сборки скачивает сам electron-builder
+
+      # Распознавание речи — нативный модуль sherpa-onnx, свой для каждой ОС и процессора. npm ставит только
+      # модуль этой машины (Apple Silicon), а сборка для macOS — сразу для arm64 и x64: докладываем модуль Intel.
+      - name: macOS — нативные модули для arm64 и x64
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          V=$(node -p "require('sherpa-onnx-node/package.json').version")
+          npm install --no-save --force "sherpa-onnx-darwin-x64@$V" "sherpa-onnx-darwin-arm64@$V"
+          ls -d node_modules/sherpa-onnx-darwin-*
+
+      - name: Иконка
+        run: npm run icon
+
+      - name: Сборка
+        shell: bash
+        run: npx electron-builder --publish ${{ inputs.publish && 'always' || 'never' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false' # сертификатов подписи нет — macOS получает ad-hoc подпись
+
+      # Каждая сборка для macOS должна нести модуль речи своего процессора — иначе Орион запустится немым
+      - name: macOS — проверка нативных модулей
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          for pair in "mac:x64" "mac-arm64:arm64"; do
+            dir="dist/${pair%%:*}/Orion.app/Contents/Resources/app.asar.unpacked/node_modules/sherpa-onnx-darwin-${pair##*:}"
+            test -d "$dir" || { echo "::error::Нет $dir"; exit 1; }
+          done
+
+      - name: Установщики как артефакт
+        uses: actions/upload-artifact@v4
+        with:
+          name: orion-${{ matrix.name }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+            dist/*.AppImage
+            dist/*.deb
+            dist/latest*.yml

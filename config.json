@@ -1,0 +1,66 @@
+{
+  "name": "Орион",
+  "city": "Липецк",
+  "ollamaUrl": "http://127.0.0.1:11434",
+  "model": "qwen3.5:4b",
+  "think": false,
+  "hotkey": "CommandOrControl+Alt+J",
+  "speech": {
+    "modelsDir": "",
+    "asrModel": "sherpa-onnx-streaming-zipformer-small-ru-vosk-int8-2025-08-16",
+    "ttsModel": "sherpa-onnx-supertonic-3-tts-int8-2026-05-11",
+    "ttsSpeed": 1,
+    "ttsTuning": {},
+    "ttsSpeaker": 9,
+    "listenOnStart": true,
+    "wakeWords": [
+      "орион",
+      "orion"
+    ],
+    "ttsSteps": 12,
+    "vadThreshold": 0.3
+  },
+  "discoverApps": true,
+  "apps": {
+    "блокнот": "notepad.exe",
+    "калькулятор": "calc.exe",
+    "диспетчер задач": "taskmgr.exe"
+  },
+  "search": {
+    "browserUrl": "https://ya.ru/search/?text="
+  },
+  "commands": {
+    "заблокировать компьютер": {
+      "file": "rundll32.exe",
+      "args": [
+        "user32.dll,LockWorkStation"
+      ],
+      "confirm": false
+    },
+    "выключить компьютер": {
+      "file": "shutdown.exe",
+      "args": [
+        "/s",
+        "/t",
+        "60"
+      ],
+      "confirm": true
+    },
+    "перезагрузить компьютер": {
+      "file": "shutdown.exe",
+      "args": [
+        "/r",
+        "/t",
+        "60"
+      ],
+      "confirm": true
+    },
+    "отменить выключение": {
+      "file": "shutdown.exe",
+      "args": [
+        "/a"
+      ],
+      "confirm": false
+    }
+  }
+}

@@ -1,0 +1,124 @@
+{
+  "name": "orion",
+  "productName": "Orion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Орион — локальный голосовой ассистент в духе джарвис. на Electron + Ollama,максимально простой и удобный в использовании. Поддержка русского языка.",
+  "author": {
+    "name": "Ovchinnikov Danila",
+    "email": "52536804+Danik-Off@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/Danik-Off/orion",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Danik-Off/orion.git"
+  },
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "models": "node scripts/get-models.js",
+    "test": "node --test",
+    "eval": "node scripts/eval.js",
+    "eval:holdout": "node scripts/eval.js --cases test/fixtures/eval-holdout.json",
+    "icon": "node scripts/make-icon.js",
+    "screenshots": "electron scripts/screenshots.js",
+    "dist": "npm run icon && electron-builder --publish never",
+    "dist:dir": "npm run icon && electron-builder --dir --publish never"
+  },
+  "build": {
+    "appId": "io.github.danik-off.orion",
+    "productName": "Orion",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "config.json",
+      "package.json",
+      "!**/node_modules/**/{README,CHANGELOG,HISTORY,AUTHORS}*",
+      "!**/node_modules/**/*.{md,markdown,map,d.ts,d.mts,d.cts,ts}",
+      "!**/node_modules/**/{test,tests,__tests__,docs,doc,example,examples,.github}/**"
+    ],
+    "asarUnpack": [
+      "node_modules/sherpa-onnx-*/**"
+    ],
+    "npmRebuild": false,
+    "electronLanguages": [
+      "ru",
+      "en-US"
+    ],
+    "compression": "maximum",
+    "afterPack": "scripts/after-pack.js",
+    "artifactName": "Orion-${version}-${os}-${arch}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Danik-Off",
+        "repo": "orion",
+        "releaseType": "draft"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "artifactName": "Orion-Setup-${version}.${ext}",
+      "deleteAppDataOnUninstall": true,
+      "include": "installer/installer.nsh"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": false,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Орион слушает голосовые команды. Распознавание идёт на этом компьютере, звук никуда не отправляется."
+      }
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "synopsis": "Локальный голосовой ассистент",
+      "maintainer": "Ovchinnikov Danila <52536804+Danik-Off@users.noreply.github.com>"
+    }
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "eyo-kernel": "^4.1.3",
+    "sherpa-onnx-node": "^1.13.8"
+  }
+}

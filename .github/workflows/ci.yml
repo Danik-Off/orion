@@ -1,0 +1,43 @@
+# Проверка каждого изменения: тесты на Windows, macOS и Linux, затем пробная сборка установщиков
+# (их можно скачать со страницы запуска — раздел Artifacts, хранятся неделю).
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags-ignore: ['v*'] # теги собирает release.yml
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Тесты (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1' # тестам Electron не нужен
+      - run: npm test
+
+  build:
+    name: Сборка
+    needs: test
+    uses: ./.github/workflows/build.yml
+    with:
+      publish: false
