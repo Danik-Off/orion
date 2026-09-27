@@ -36,6 +36,9 @@ jobs:
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1' # Electron для сборки скачивает сам electron-builder
 
+      - name: Тесты
+        run: npm test
+
       # Распознавание речи — нативный модуль sherpa-onnx, свой для каждой ОС и процессора. npm ставит только
       # модуль этой машины (Apple Silicon), а сборка для macOS — сразу для arm64 и x64: докладываем модуль Intel.
       - name: macOS — нативные модули для arm64 и x64

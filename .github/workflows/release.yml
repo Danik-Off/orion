@@ -1,44 +1,72 @@
-# Выпуск версии: git tag v1.2.3 && git push --tags (или npm version patch && git push --follow-tags).
-# 1) черновик релиза → 2) установщики для Windows, macOS, Linux выкладываются в него → 3) релиз публикуется.
+# Выпуск версии: поднимите version в package.json и запушьте в main — релиз опубликуется сам.
+#   npm version patch --no-git-tag-version   # 0.1.0 → 0.1.1 (или minor / major)
+#   git commit -am "0.1.1" && git push
+# 1) есть ли уже опубликованный релиз этой версии → 2) тег и черновик релиза →
+# 3) установщики для Windows, macOS, Linux выкладываются в черновик → 4) релиз публикуется.
 # После публикации установленные копии Ориона при запуске найдут обновление (latest*.yml в релизе).
 name: Release
 
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths:
+      - package.json
+      - .github/workflows/release.yml
+      - .github/workflows/build.yml
+  workflow_dispatch: # выпустить текущую версию вручную (кнопка Run workflow во вкладке Actions)
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  draft:
-    name: Черновик релиза
+  version:
+    name: Новая версия?
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.check.outputs.tag }}
+      release: ${{ steps.check.outputs.release }}
     steps:
       - uses: actions/checkout@v5
 
-      - name: Тег совпадает с версией в package.json
-        run: |
-          V=$(node -p "require('./package.json').version")
-          if [ "v$V" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::Тег $GITHUB_REF_NAME, а в package.json версия $V. Поднимите версию: npm version $GITHUB_REF_NAME"
-            exit 1
-          fi
-
-      - name: Создать черновик
+      - name: Версия из package.json и опубликованные релизы
+        id: check
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft \
-              --title "Орион $GITHUB_REF_NAME" --generate-notes
+          TAG="v$(node -p "require('./package.json').version")"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          DRAFT=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || echo none)
+          if [ "$DRAFT" = "false" ]; then
+            echo "Релиз $TAG уже опубликован — выпускать нечего. Поднимите version в package.json."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Выпускаю $TAG"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Тег и черновик релиза
+        if: steps.check.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.check.outputs.tag }}
+        run: |
+          # Тег на этот коммит, если его ещё нет (например, его не создал npm version)
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            git tag "$TAG" "$GITHUB_SHA"
+            git push origin "$TAG"
+          fi
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+              --title "Орион $TAG" --generate-notes
 
   build:
     name: Сборка
-    needs: draft
+    needs: version
+    if: needs.version.outputs.release == 'true'
     uses: ./.github/workflows/build.yml
     with:
       publish: true
@@ -46,10 +74,11 @@ jobs:
 
   publish:
     name: Публикация
-    needs: build
+    needs: [version, build]
     runs-on: ubuntu-latest
     steps:
       - name: Опубликовать релиз
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          TAG: ${{ needs.version.outputs.tag }}
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
