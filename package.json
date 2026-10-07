@@ -32,6 +32,7 @@
     "router-eval": "node scripts/router-eval.js",
     "router-anonymize": "node scripts/router-anonymize.js",
     "router-release": "node scripts/router-release.js",
+    "router-publish": "node scripts/router-release.js --publish",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

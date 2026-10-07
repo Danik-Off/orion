@@ -36,7 +36,8 @@ function parse(text, version = '') {
     if (/^#/.test(line) || !line.trim()) continue;
     const item = line.match(/^\s*[-*]\s+(.+)/);
     if (item) items.push(plain(item[1]));
-    else if (items.length) items[items.length - 1] += ` ${plain(line)}`; // перенос строки внутри пункта
+    else if (items.length)
+      items[items.length - 1] += ` ${plain(line)}`; // перенос строки внутри пункта
     else intro.push(plain(line));
   }
   return { version: version || head.match(/\d+\.\d+\.\d+/)?.[0] || '', date, intro: intro.join(' '), items };
@@ -84,4 +85,26 @@ function spoken(list, { limit = 10 } = {}) {
     .join(' ');
 }
 
-module.exports = { DIR, compare, parse, versions, read, between, spoken };
+// Коротко, что в новой версии, — для вопроса «Хотите обновить?». releaseNotes — описание релиза на GitHub
+// (текст update/<версия>.md; GitHub отдаёт его HTML): вводная фраза или первые два пункта
+function notesSummary(releaseNotes, max = 220) {
+  const html = Array.isArray(releaseNotes) ? releaseNotes.map((n) => n?.note || '').join('\n') : String(releaseNotes || '');
+  const text = (s) =>
+    s
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&quot;/g, '"')
+      .replace(/&laquo;/g, '«')
+      .replace(/&raquo;/g, '»')
+      .replace(/&amp;/g, '&')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const intro = html.match(/<p>([\s\S]*?)<\/p>/)?.[1];
+  const items = [...html.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => text(m[1]));
+  let out = intro ? text(intro) : items.slice(0, 2).join(' ');
+  if (!out && !/<[a-z]/i.test(html)) out = text(html.split(/\n\s*\n/)[0] || ''); // простой текст
+  if (out.length > max) out = `${out.slice(0, max).replace(/\s+\S*$/, '')}…`;
+  return out;
+}
+
+module.exports = { DIR, compare, parse, versions, read, between, spoken, notesSummary };

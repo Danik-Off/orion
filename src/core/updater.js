@@ -2,6 +2,7 @@
 // нашлась новая версия → вопрос голосом и кнопками «Хотите обновить?» → скачать → перезапуститься.
 // Где обновление поставить нельзя (macOS без подписи Apple, .deb) — открываем страницу релиза.
 const { autoUpdater } = require('electron-updater');
+const { notesSummary } = require('../lib/release-notes');
 
 // app, confirm(text) → Promise<bool>, report({ title, progress, done?, error? }) — полоска в окне,
 // beforeInstall() — сохранить разговор до выхода, openExternal(url), audit
@@ -49,7 +50,8 @@ function createUpdater({ app, confirm, report, beforeInstall, openExternal, audi
         return { status: 'latest' };
       }
       audit({ update: 'найдено', version, current: app.getVersion() });
-      const yes = await confirm(`Найдено обновление до версии ${version}. Хотите обновить?`);
+      const about = notesSummary(result.updateInfo.releaseNotes);
+      const yes = await confirm(`Найдено обновление до версии ${version}.${about ? ` ${about}` : ''} Хотите обновить?`);
       audit({ update: yes ? 'согласие' : 'отказ', version });
       if (yes) await install(version);
       return { status: yes ? 'installing' : 'declined', version };

@@ -1,7 +1,8 @@
 // Релиз дообученной FunctionGemma (orion-router) на GitHub — оттуда её качает первый запуск (src/core/llama.js).
 //   npm run router-release                     → dist/release/models-router-v1/: модель, NOTICE, условия Gemma,
 //                                                 карточка модели, SHA256SUMS; проверка контрольной суммы
-//   npm run router-release -- --publish        → то же и выложить в релиз (нужен gh auth login)
+//   npm run router-publish                     → то же и выложить в релиз (нужен gh auth login)
+//                                                 (не «router-release -- --publish»: PowerShell съедает «--»)
 //   --model <файл.gguf>  --tag <тег>
 // Условия Gemma (docs/models/orion-router/GEMMA_TERMS.txt, раздел 3.1): модель распространяется только вместе
 // с копией условий, файлом NOTICE и пометкой, что она изменена, — всё это кладётся рядом с файлом модели.
@@ -79,7 +80,7 @@ try {
     publish(files);
     console.log(`выложено: https://github.com/${REPO}/releases/tag/${tag}`);
   } else {
-    console.log('\nвыложить: npm run router-release -- --publish');
+    console.log('\nвыложить: npm run router-publish  (сначала gh auth login)');
   }
 } catch (err) {
   console.error(err.message);
