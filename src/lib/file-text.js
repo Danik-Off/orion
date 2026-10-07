@@ -69,7 +69,7 @@ function xmlText(xml, paragraph = /<\/(w:p|text:p|text:h|a:p|p|h\d|li|tr|row|tit
 function decodeText(buf) {
   if (buf[0] === 0xff && buf[1] === 0xfe) return buf.toString('utf16le').slice(1);
   const utf8 = buf.toString('utf8');
-  if (!utf8.includes('�')) return utf8.replace(/^﻿/, '');
+  if (!utf8.includes('�')) return utf8.replace(/^\uFEFF/, '');
   try {
     return new TextDecoder('windows-1251').decode(buf);
   } catch {
@@ -103,16 +103,24 @@ function readText(file) {
     const entries = zipEntries(buf);
     const pick = (re) => entries.filter((e) => re.test(e.name)).sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }));
     const parts =
-      ext === '.docx' ? pick(/^word\/document\.xml$/)
-      : ext === '.odt' ? pick(/^content\.xml$/)
-      : ext === '.pptx' ? pick(/^ppt\/slides\/slide\d+\.xml$/)
-      : ext === '.xlsx' ? pick(/^xl\/sharedStrings\.xml$/)
-      : pick(/\.(x?html?)$/); // epub — главы по порядку имён
+      ext === '.docx'
+        ? pick(/^word\/document\.xml$/)
+        : ext === '.odt'
+          ? pick(/^content\.xml$/)
+          : ext === '.pptx'
+            ? pick(/^ppt\/slides\/slide\d+\.xml$/)
+            : ext === '.xlsx'
+              ? pick(/^xl\/sharedStrings\.xml$/)
+              : pick(/\.(x?html?)$/); // epub — главы по порядку имён
     if (!parts.length) return { error: 'в документе не нашлось текста' };
     text = parts.map((e) => xmlText(zipRead(buf, e))).join('\n');
   }
   if (/\.html?$/i.test(file)) text = xmlText(text);
-  text = text.replace(/[ \t ]+/g, ' ').replace(/\s*\n\s*/g, '\n').replace(/\n{2,}/g, '\n').trim();
+  text = text
+    .replace(/[ \t\u00A0]+/g, ' ')
+    .replace(/\s*\n\s*/g, '\n')
+    .replace(/\n{2,}/g, '\n')
+    .trim();
   return text ? { text } : { error: 'файл пустой' };
 }
 

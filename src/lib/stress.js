@@ -29,12 +29,19 @@ function load() {
   const layer = (name) => {
     const { shape, offset } = meta.layers[name];
     const n = shape.reduce((a, b) => a * b, 1);
-    return { w: new Float32Array(buf.buffer.slice(buf.byteOffset + offset, buf.byteOffset + offset + n * 4)), rows: shape[0], cols: shape[1] ?? 1 };
+    return {
+      w: new Float32Array(buf.buffer.slice(buf.byteOffset + offset, buf.byteOffset + offset + n * 4)),
+      rows: shape[0],
+      cols: shape[1] ?? 1,
+    };
   };
-  const mlp = (prefix) =>
-    [0, 2, 4, 6].map((i) => ({ weight: layer(`${prefix}.${i}.weight`), bias: layer(`${prefix}.${i}.bias`).w }));
+  const mlp = (prefix) => [0, 2, 4, 6].map((i) => ({ weight: layer(`${prefix}.${i}.weight`), bias: layer(`${prefix}.${i}.bias`).w }));
   const gunzip = (file) => zlib.gunzipSync(fs.readFileSync(path.join(DIR, file))).toString('utf8');
-  const ngrams = new Map(gunzip('ngrams.txt.gz').split('\n').map((g, i) => [g, i]));
+  const ngrams = new Map(
+    gunzip('ngrams.txt.gz')
+      .split('\n')
+      .map((g, i) => [g, i]),
+  );
   const exceptions = new Map(
     gunzip('exceptions.txt.gz')
       .split('\n')
@@ -52,8 +59,17 @@ function load() {
     exceptions.set(word, [stressed.indexOf('+'), stressed.replace('+', '').indexOf('ё')]);
   }
   model = {
-    q, dim, scale, zeroPoint, ngrams, exceptions, homodict, phrases,
-    stress: mlp('stress_clf'), yo: mlp('yo_clf'), rules: new Map(),
+    q,
+    dim,
+    scale,
+    zeroPoint,
+    ngrams,
+    exceptions,
+    homodict,
+    phrases,
+    stress: mlp('stress_clf'),
+    yo: mlp('yo_clf'),
+    rules: new Map(),
     hardE: loadHardE(),
     grammar: loadGrammar(),
   };
@@ -132,7 +148,7 @@ function classify(layers, x) {
     v = out;
   });
   const max = Math.max(...v);
-  const e = v.map((x) => Math.exp(x - max));
+  const e = v.map((y) => Math.exp(y - max));
   const sum = e.reduce((a, b) => a + b, 0);
   let best = 0;
   for (let i = 1; i < e.length; i++) if (e[i] > e[best]) best = i;
@@ -163,7 +179,13 @@ function rulesFor(m, word) {
   if (!m.rules.has(word)) {
     const variants = (m.phrases[word] || []).map(([variant, list]) => ({
       variant,
-      re: new RegExp(`(?<![а-яА-ЯёЁ-])(?:${[...list].sort((a, b) => b.length - a.length).map(escapeRe).join('|')})(?![а-яА-ЯёЁ-])`, 'i'),
+      re: new RegExp(
+        `(?<![а-яА-ЯёЁ-])(?:${[...list]
+          .sort((a, b) => b.length - a.length)
+          .map(escapeRe)
+          .join('|')})(?![а-яА-ЯёЁ-])`,
+        'i',
+      ),
     }));
     m.rules.set(word, variants);
   }
@@ -200,8 +222,15 @@ function applyVariant(word, variant) {
 // listPrev/listNext — соседи по перечислению («покупки, дела, фильмы», «напоминания и дела»)
 function neighbours(text, start, end) {
   const low = (w) => w?.replace(/\+/g, '').toLowerCase() ?? null;
-  const prev = low(text.slice(0, start).match(/([а-яё+-]+)[  ]+$/i)?.[1]);
-  const next = (text.slice(end).split(/[.!?;:,—()«»"]/)[0].match(/[а-яё+]+/gi) || []).slice(0, 4).map(low);
+  const prev = low(text.slice(0, start).match(/([а-яё+-]+)[ \u00A0]+$/i)?.[1]);
+  const next = (
+    text
+      .slice(end)
+      .split(/[.!?;:,—()«»"]/)[0]
+      .match(/[а-яё+]+/gi) || []
+  )
+    .slice(0, 4)
+    .map(low);
   const listPrev = low(text.slice(0, start).match(/([а-яё+-]+)(?:\s*,\s*|\s+и\s+)$/i)?.[1]);
   const listNext = low(text.slice(end).match(/^(?:\s*,\s*|\s+и\s+)([а-яё+-]+)/i)?.[1]);
   return { prev, next, listPrev, listNext };
@@ -237,7 +266,8 @@ function grammarHomograph(m, lower, { prev, next, listPrev, listNext }) {
 
 // «стоит» — цена или место: «сколько ст+оит», «ст+оит сто рублей», «ст+оит попробовать»; «сто+ит стол», «сто+ит на холме»
 const PRICE_BEFORE = /^(сколько|почём|почем|дорого|недорого|дёшево|дешево|не|ничего|сколечко)$/;
-const PRICE_AFTER = /^(ли|того|денег|дорого|недорого|дёшево|дешево|дороже|дешевле|около|примерно|всего|почти|целых|больше|меньше|один|одна|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|\S+надцать|двадцать|тридцать|сорок|пятьдесят|шестьдесят|семьдесят|восемьдесят|девяносто|сто|двести|триста|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот|тысяч\S*|миллион\S*|полтора|полторы|копейк\S*|рубл\S*|доллар\S*|евро)$/;
+const PRICE_AFTER =
+  /^(ли|того|денег|дорого|недорого|дёшево|дешево|дороже|дешевле|около|примерно|всего|почти|целых|больше|меньше|один|одна|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|\S+надцать|двадцать|тридцать|сорок|пятьдесят|шестьдесят|семьдесят|восемьдесят|девяносто|сто|двести|триста|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот|тысяч\S*|миллион\S*|полтора|полторы|копейк\S*|рубл\S*|доллар\S*|евро)$/;
 function stoitRule(lower, { prev, next }) {
   const forms = { стоит: ['ст+оит', 'сто+ит'], стоят: ['ст+оят', 'сто+ят'] }[lower];
   if (!forms) return null;
@@ -283,9 +313,9 @@ function stressWord(m, raw, note = () => {}) {
   if (!vowels.length) return raw;
   const haveStress = lower.includes('+');
   const haveYo = lower.includes('ё');
-  if (haveStress) return note('given', raw), raw; // уже размечено (омограф, нормализатор или вручную)
+  if (haveStress) return (note('given', raw), raw); // уже размечено (омограф, нормализатор или вручную)
   if (vowels.length === 1) return raw; // односложное — ударение очевидно, синтезатору метка не нужна
-  if (haveYo) return note('yo', raw), raw; // «ё» всегда ударная
+  if (haveYo) return (note('yo', raw), raw); // «ё» всегда ударная
 
   if (m.exceptions.has(clean)) {
     const [s, y] = m.exceptions.get(clean);
@@ -320,7 +350,14 @@ function accentuate(text, note) {
   const withHomographs = markHomographs(m, clean);
   return withHomographs
     .split(/([\s.,!?;:<>=()/\\«»"„“—–]+)/)
-    .map((token, i) => (i % 2 ? token : token.split(/(-)/).map((p) => (p === '-' || /^то$/i.test(p) ? p : stressWord(m, p, note))).join('')))
+    .map((token, i) =>
+      i % 2
+        ? token
+        : token
+            .split(/(-)/)
+            .map((p) => (p === '-' || /^то$/i.test(p) ? p : stressWord(m, p, note)))
+            .join(''),
+    )
     .join('');
 }
 

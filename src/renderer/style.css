@@ -1,53 +1,5 @@
-/* ===================================================================================================
-   Орион — дизайн-система «HUD».
-   Один акцент (голубой), один цвет состояния (мятный — распознавание), янтарный — предупреждения.
-   Один радиус, одна шкала отступов (4/8/12/16), три шрифта: текст, HUD-подписи, данные.
-   Раскладка полного окна: пустой экран — крупный реактор по центру; когда идёт разговор —
-   реактор ужимается в строку «реактор + табло» над лентой (как в плашке в углу).
-   =================================================================================================== */
-
-:root {
-  /* Фон и поверхности */
-  --bg: #05090d;
-  --bg-2: #0a131b;
-  --surface: rgba(18, 36, 52, 0.5); /* карточки */
-  --surface-hi: rgba(30, 60, 84, 0.45); /* реплики пользователя */
-  --well: rgba(0, 0, 0, 0.34); /* углубления: поля ввода, треки */
-  --menu: #0b1620; /* выпадающие списки */
-  --line: rgba(120, 215, 255, 0.11);
-  --line-strong: rgba(120, 215, 255, 0.26);
-
-  /* Цвета */
-  --accent: #5fd2ff;
-  --accent-2: #a6ecff;
-  --accent-dim: rgba(95, 210, 255, 0.5);
-  --accent-soft: rgba(95, 210, 255, 0.08);
-  --hear: #5dffb4; /* распознавание речи */
-  --hear-2: #b5ffdc;
-  --hear-dim: rgba(93, 255, 180, 0.5);
-  --warn: #ffb45c;
-  --warn-dim: rgba(255, 180, 92, 0.4);
-  --warn-soft: rgba(255, 180, 92, 0.07);
-  --danger: #ff8a8a;
-  --text: #e3f4ff;
-  --text-2: #c3dbeb;
-  --muted: #6f8ca2;
-
-  /* Форма */
-  --r: 2px;
-  --r-window: 4px;
-  --control-h: 32px;
-  --pad: 16px; /* поля окна */
-
-  /* Шрифты Windows: текст — Segoe UI, подписи — Bahnschrift (DIN), данные — Cascadia Mono */
-  --font-ui: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
-  --font-hud: 'Bahnschrift', 'Segoe UI Variable Display', 'Segoe UI', sans-serif;
-  --font-mono: 'Cascadia Mono', 'Cascadia Code', Consolas, monospace;
-
-  --lvl: 0; /* громкость микрофона 0..1, задаётся из app.js */
-  font-family: var(--font-ui);
-  color-scheme: dark;
-}
+/* Основное окно: разговор и плашка в углу. Токены, основа, кнопки и карточки — в shared/theme.css (общие с окном настроек) */
+@import url('shared/theme.css');
 
 /* HUD-уголки — только у главных рамок: окно, строка ввода, плашка. Объявлены на самих блоках,
    иначе var(--bk) вычислился бы один раз на :root и размер уголков нельзя было бы менять */
@@ -67,205 +19,6 @@ body.mode-orb .captions {
 }
 
 /* ---------------------------------------------------------------------------------------------------
-   Основа
-   --------------------------------------------------------------------------------------------------- */
-
-* {
-  box-sizing: border-box;
-}
-
-html,
-body {
-  margin: 0;
-  height: 100%;
-  background: transparent; /* окно прозрачное, фон рисует .app */
-  color: var(--text);
-  overflow: hidden;
-  user-select: none;
-  -webkit-font-smoothing: antialiased;
-}
-
-button {
-  font: inherit;
-  color: inherit;
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-}
-button:focus-visible,
-input:focus-visible,
-select:focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* Спрайт с иконками: не занимает места (inline-стили запрещены CSP, поэтому здесь) */
-.sprite {
-  position: absolute;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-}
-
-svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-  stroke-linecap: square;
-  stroke-linejoin: miter;
-}
-
-::-webkit-scrollbar {
-  width: 3px;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--line-strong);
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@keyframes pulse {
-  to {
-    transform: scale(1.3);
-  }
-}
-@keyframes breathe {
-  from {
-    transform: scale(0.82);
-    opacity: 0.75;
-  }
-  to {
-    transform: scale(1.05);
-    opacity: 1;
-  }
-}
-@keyframes blink {
-  50% {
-    opacity: 0.35;
-  }
-}
-@keyframes rise {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-}
-
-/* ---------------------------------------------------------------------------------------------------
-   Общие элементы: кнопка, карточка, поле
-   --------------------------------------------------------------------------------------------------- */
-
-/* Кнопка: контурная; .primary — залитая акцентом; внутри предупреждений — янтарная */
-.btn {
-  height: 30px;
-  padding: 0 14px;
-  border-radius: var(--r);
-  border: 1px solid var(--line-strong);
-  color: var(--accent-2);
-  font-family: var(--font-hud);
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
-}
-.btn:hover {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-.btn.primary {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: #04202c;
-  font-weight: 600;
-}
-.btn.primary:hover {
-  box-shadow: 0 0 14px rgba(95, 210, 255, 0.45);
-}
-.confirm .btn,
-.restart-bar .btn {
-  border-color: var(--warn-dim);
-  color: var(--warn);
-}
-.confirm .btn:hover,
-.restart-bar .btn:hover {
-  border-color: var(--warn);
-  background: var(--warn-soft);
-}
-.confirm .btn.primary,
-.restart-bar .btn.primary {
-  border-color: var(--warn);
-  background: var(--warn);
-  color: #1a1206;
-}
-.confirm .btn.primary:hover,
-.restart-bar .btn.primary:hover {
-  box-shadow: 0 0 14px rgba(255, 180, 92, 0.4);
-}
-
-/* Карточки: панель, подтверждение, предупреждения — одна форма, кромка слева задаёт смысл */
-.panel,
-.confirm,
-.restart-bar,
-.settings-error {
-  border-radius: var(--r);
-  border: 1px solid var(--line-strong);
-  border-left: 2px solid var(--accent);
-  background: rgba(8, 18, 27, 0.92);
-  font-size: 13px;
-  line-height: 1.45;
-}
-/* Панель и подтверждение появляются переходами — см. «Появление и исчезновение» ниже */
-.restart-bar,
-.settings-error {
-  animation: rise 0.2s ease-out;
-}
-.confirm,
-.restart-bar,
-.settings-error {
-  border-color: var(--warn-dim);
-  border-left-color: var(--warn);
-  background: repeating-linear-gradient(-45deg, rgba(255, 180, 92, 0.05) 0 6px, transparent 6px 12px), rgba(20, 14, 6, 0.9);
-  color: var(--warn);
-}
-.restart-bar[hidden],
-.settings-error[hidden] {
-  display: none;
-}
-
-/* Поле ввода и список */
-.field input:not([type]),
-.field select,
-.panel-input {
-  width: 100%;
-  height: var(--control-h);
-  padding: 0 10px;
-  border-radius: var(--r);
-  border: 1px solid var(--line-strong);
-  background-color: var(--well);
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-.field input:not([type]):focus,
-.field select:focus,
-.panel-input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 10px rgba(95, 210, 255, 0.15);
-}
-
-/* ---------------------------------------------------------------------------------------------------
    Окно
    --------------------------------------------------------------------------------------------------- */
 
@@ -279,8 +32,7 @@ svg {
   overflow: hidden;
   --bk: 14px;
   background:
-    var(--brackets),
-    radial-gradient(80% 34% at 50% 0%, rgba(95, 210, 255, 0.1), transparent 70%),
+    var(--brackets), radial-gradient(80% 34% at 50% 0%, rgba(95, 210, 255, 0.1), transparent 70%),
     linear-gradient(180deg, var(--bg-2), var(--bg));
 }
 /* Сетка и строки развёртки — как на приборе */
@@ -293,7 +45,10 @@ svg {
     repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0 1px, transparent 1px 3px),
     linear-gradient(rgba(120, 215, 255, 0.028) 1px, transparent 1px),
     linear-gradient(90deg, rgba(120, 215, 255, 0.028) 1px, transparent 1px);
-  background-size: auto, 20px 20px, 20px 20px;
+  background-size:
+    auto,
+    20px 20px,
+    20px 20px;
   mask-image: linear-gradient(180deg, #000, rgba(0, 0, 0, 0.3) 55%, #000);
 }
 .app > * {
@@ -310,6 +65,7 @@ svg {
 }
 .drag {
   flex: 1;
+  min-width: 0; /* длинная подпись версии не наезжает на кнопки — обрезается многоточием */
   height: 100%;
   display: flex;
   align-items: center;
@@ -336,6 +92,7 @@ svg {
   display: flex;
   flex-direction: column;
   gap: 1px;
+  min-width: 0;
   line-height: 1.15;
 }
 #name {
@@ -354,19 +111,30 @@ svg {
   text-transform: uppercase;
   color: var(--muted);
 }
+#model {
+  text-transform: none; /* подпись версии — как написана: orionAssistent:0.3.0(1a2b3c4) */
+  letter-spacing: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .tools {
   display: flex;
-  gap: 2px;
+  flex-shrink: 0;
+  gap: 0;
 }
 .icon {
-  width: 30px;
+  width: 28px; /* восемь кнопок и подпись версии в 400 пикселях */
   height: 30px;
   display: grid;
   place-items: center;
   border-radius: var(--r);
   border: 1px solid transparent;
   color: var(--muted);
-  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  transition:
+    color 0.15s,
+    background 0.15s,
+    border-color 0.15s;
 }
 .icon:hover {
   color: var(--text);
@@ -390,55 +158,6 @@ svg {
   background: rgba(255, 90, 90, 0.1);
 }
 
-/* --- Вкладки: строка с подчёркиванием активной --- */
-.tabs {
-  display: flex;
-  margin: 0 var(--pad);
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  flex-shrink: 0;
-}
-.tab {
-  position: relative;
-  flex: 1;
-  height: 34px;
-  font-family: var(--font-hud);
-  font-size: 11px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--muted);
-  transition: color 0.15s;
-}
-.tab::after {
-  content: '';
-  position: absolute;
-  left: 32%;
-  right: 32%;
-  bottom: -1px;
-  height: 2px;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent);
-  transform: scaleX(0);
-  transition: transform 0.2s;
-}
-.tab:hover {
-  color: var(--text);
-}
-.tab.on {
-  color: var(--accent-2);
-}
-.tab.on::after {
-  transform: scaleX(1);
-}
-body.mode-orb .tabs,
-body.mode-orb .settings,
-body:not(.mode-orb) .view-settings .stage,
-body:not(.mode-orb) .view-settings .log,
-body:not(.mode-orb) .view-settings .hints,
-body:not(.mode-orb) .view-settings .composer {
-  display: none;
-}
-
 /* ---------------------------------------------------------------------------------------------------
    Реактор. Все размеры — в процентах от .core, поэтому один и тот же реактор
    одинаково выглядит крупным (пустой экран), в строке разговора и в плашке
@@ -458,7 +177,9 @@ body:not(.mode-orb) .view-settings .composer {
   border-radius: 50%;
   flex-shrink: 0;
   isolation: isolate; /* свечение ::after — под кольцами, но не под фоном окна */
-  transition: width 0.3s, height 0.3s;
+  transition:
+    width 0.3s,
+    height 0.3s;
 }
 .core:focus-visible {
   outline: 1px solid var(--accent-dim);
@@ -501,7 +222,9 @@ body:not(.mode-orb) .view-settings .composer {
   border-bottom-color: var(--accent-dim);
   filter: drop-shadow(0 0 4px rgba(95, 210, 255, 0.45));
   animation: spin 7s linear infinite;
-  transition: inset 0.35s, opacity 0.35s;
+  transition:
+    inset 0.35s,
+    opacity 0.35s;
 }
 .r2 {
   inset: 13%;
@@ -524,14 +247,22 @@ body:not(.mode-orb) .view-settings .composer {
   background: radial-gradient(circle, #fff 0%, var(--accent) 42%, transparent 72%);
   box-shadow: 0 0 calc(18px + var(--lvl) * 40px) var(--accent);
   transform: scale(calc(1 + var(--lvl) * 0.5));
-  transition: transform 0.08s linear, box-shadow 0.08s linear;
+  transition:
+    transform 0.08s linear,
+    box-shadow 0.08s linear;
 }
 /* Радар-развёртка: видна только в ожидании команды */
 .sweep {
   position: absolute;
   inset: -11%;
   border-radius: 50%;
-  background: conic-gradient(from 0deg, transparent 0 290deg, rgba(95, 210, 255, 0.05) 300deg, rgba(95, 210, 255, 0.35) 359deg, var(--accent-2) 360deg);
+  background: conic-gradient(
+    from 0deg,
+    transparent 0 290deg,
+    rgba(95, 210, 255, 0.05) 300deg,
+    rgba(95, 210, 255, 0.35) 359deg,
+    var(--accent-2) 360deg
+  );
   mask-image: radial-gradient(circle, transparent 20%, #000 21%, #000 70%, transparent 70.5%);
   opacity: 0;
   transition: opacity 0.3s;
@@ -917,7 +648,9 @@ body.mode-full .app:has(.log > .msg) .setup {
   font-size: 10.5px;
   text-decoration: none;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 .sources a::before {
   content: '';
@@ -964,7 +697,10 @@ body.mode-full .app:has(.log > .msg) .setup {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s;
 }
 .chip::before {
   content: '›';
@@ -997,7 +733,11 @@ body.mode-full .app:has(.log > .msg) .setup {
   interpolate-size: allow-keywords;
   flex-shrink: 0;
   min-height: 0; /* иначе flex держит минимум по содержимому: сворачивание и разворот съезжают рывком */
-  transition: height 0.28s cubic-bezier(0.22, 1, 0.36, 1), padding-bottom 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s, visibility 0.28s;
+  transition:
+    height 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    padding-bottom 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.2s,
+    visibility 0.28s;
 }
 .app:has(> .panel:not([hidden], .modal)) .hints {
   height: 0;
@@ -1008,7 +748,9 @@ body.mode-full .app:has(.log > .msg) .setup {
 }
 body.mode-full .app:not(:has(.log > .msg)) .stage,
 body.mode-full .app:not(:has(.log > .msg)) .captions {
-  transition: padding 0.28s cubic-bezier(0.22, 1, 0.36, 1), margin 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    padding 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    margin 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 body.mode-full .app:not(:has(.log > .msg)):has(> .panel:not([hidden], .modal)) .stage {
   padding-top: 14px;
@@ -1080,7 +822,8 @@ body.mode-full .app:not(:has(.log > .msg)):has(> .panel:not([hidden], .modal)) .
 .confirm,
 .backdrop {
   interpolate-size: allow-keywords;
-  transition-property: opacity, transform, height, margin-bottom, padding-top, padding-bottom, border-top-width, border-bottom-width, display;
+  transition-property:
+    opacity, transform, height, margin-bottom, padding-top, padding-bottom, border-top-width, border-bottom-width, display;
   transition-behavior: allow-discrete;
   transition-duration: 0.28s;
   transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
@@ -1172,7 +915,9 @@ body.mode-full .app:not(:has(.log > .msg)):has(> .panel:not([hidden], .modal)) .
   border: 1px solid var(--line);
   --bk: 7px;
   background: var(--brackets), var(--well);
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 .composer::before {
   content: '›';
@@ -1210,7 +955,10 @@ body.mode-full .app:not(:has(.log > .msg)):has(> .panel:not([hidden], .modal)) .
   border: 1px solid var(--accent-dim);
   background: var(--accent-soft);
   color: var(--accent);
-  transition: background 0.15s, box-shadow 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    box-shadow 0.15s,
+    color 0.15s;
 }
 .send:hover {
   background: var(--accent);
@@ -1309,217 +1057,4 @@ body.mode-orb .caption {
 }
 body.mode-orb .caption:empty {
   display: none;
-}
-
-/* ---------------------------------------------------------------------------------------------------
-   Настройки
-   --------------------------------------------------------------------------------------------------- */
-
-.settings {
-  flex: 1;
-  overflow-y: auto;
-  padding: 4px var(--pad) 20px;
-  user-select: text;
-  counter-reset: section;
-  mask-image: linear-gradient(to bottom, transparent 0, #000 12px); /* как у ленты: край под вкладками мягкий */
-}
-.settings[hidden] {
-  display: none;
-}
-.restart-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 12px 0 0;
-  padding: 8px 8px 8px 12px;
-  font-size: 12.5px;
-}
-.restart-bar span {
-  flex: 1;
-}
-.settings-error {
-  margin: 12px 0 0;
-  padding: 8px 12px;
-  font-size: 12.5px;
-}
-/* Разделы нумеруются: 01 // ОСНОВНОЕ */
-.settings h3 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 20px 0 8px;
-  font-family: var(--font-hud);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: var(--accent-2);
-  counter-increment: section;
-}
-.settings h3::before {
-  content: counter(section, decimal-leading-zero) ' //';
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.05em;
-  color: var(--accent);
-}
-.settings h3::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: linear-gradient(90deg, var(--line-strong), transparent);
-}
-.group {
-  padding: 0 12px;
-  border-radius: var(--r);
-  border: 1px solid var(--line);
-  background: var(--surface);
-}
-.group > * {
-  margin: 0;
-  padding: 11px 0;
-}
-.group > * + * {
-  border-top: 1px solid var(--line);
-}
-.settings .note {
-  display: block;
-  margin: 0 0 8px;
-}
-.settings small {
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--muted);
-}
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  font-size: 13px;
-}
-.field > span:first-child {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline; /* значение ползунка — на одной линии с подписью */
-  gap: 8px;
-}
-.field b {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--accent-2);
-}
-.field select {
-  appearance: none;
-  padding-right: 30px;
-  cursor: pointer;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235fd2ff' stroke-width='2' stroke-linecap='square'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 9px center;
-  background-size: 12px;
-}
-.field select option {
-  background: var(--menu);
-}
-#hotkey-input {
-  cursor: pointer;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--accent-2);
-}
-#hotkey-input:focus {
-  color: var(--text);
-}
-.field .row {
-  display: flex;
-  gap: 8px;
-}
-.field .row select {
-  flex: 1;
-}
-.field .btn {
-  height: var(--control-h);
-}
-
-/* Ползунок: тонкая шкала с делениями и прямоугольный маркер */
-.field input[type='range'] {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 16px;
-  margin: 0;
-  background: none;
-  cursor: pointer;
-}
-.field input[type='range']::-webkit-slider-runnable-track {
-  height: 2px;
-  background: repeating-linear-gradient(90deg, var(--line-strong) 0 1px, transparent 1px 10%), var(--line);
-}
-.field input[type='range']::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 10px;
-  height: 14px;
-  margin-top: -6px;
-  border-radius: 1px;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent);
-}
-.field input[type='range']:hover::-webkit-slider-thumb {
-  background: var(--accent-2);
-}
-
-/* Переключатели: прямоугольные, подпись слева */
-.check {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 13px;
-  line-height: 1.4;
-  cursor: pointer;
-}
-.check span {
-  flex: 1;
-}
-/* Пояснение к переключателю — своей строкой под подписью, а не переносом посреди неё */
-.check span small {
-  display: block;
-  margin-top: 2px;
-}
-.check input {
-  order: 1;
-  -webkit-appearance: none;
-  appearance: none;
-  position: relative;
-  flex-shrink: 0;
-  width: 34px;
-  height: 16px;
-  margin: 0;
-  border-radius: 1px;
-  border: 1px solid var(--line-strong);
-  background: var(--well);
-  cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
-}
-.check input::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 12px;
-  height: 10px;
-  background: var(--muted);
-  transition: transform 0.2s, background 0.2s, box-shadow 0.2s;
-}
-.check input:checked {
-  border-color: var(--accent);
-  background: rgba(95, 210, 255, 0.15);
-}
-.check input:checked::after {
-  transform: translateX(16px);
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent);
-}
-.skills-list .check {
-  font-size: 12.5px;
-  color: var(--text-2);
 }

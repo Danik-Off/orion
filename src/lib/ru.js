@@ -16,20 +16,54 @@ function degrees(t) {
 }
 
 // 84115 → «84 115», 1.4839 → «1,48»
-const money = (n, digits = 2) => n.toLocaleString('ru-RU', { maximumFractionDigits: digits }).replace(/ /g, ' ');
+const money = (n, digits = 2) => n.toLocaleString('ru-RU', { maximumFractionDigits: digits }).replace(/\u00A0/g, ' ');
 
 // Распознаватель речи пишет числа словами: «тридцать пять» → 35, «сто» → 100. Цифры тоже понимает.
 const NUM_WORDS = {
-  ноль: 0, один: 1, одна: 1, одну: 1, два: 2, две: 2, три: 3, четыре: 4, пять: 5, шесть: 6, семь: 7, восемь: 8, девять: 9,
-  десять: 10, одиннадцать: 11, двенадцать: 12, тринадцать: 13, четырнадцать: 14, пятнадцать: 15, шестнадцать: 16,
-  семнадцать: 17, восемнадцать: 18, девятнадцать: 19, двадцать: 20, тридцать: 30, сорок: 40, пятьдесят: 50,
-  шестьдесят: 60, семьдесят: 70, восемьдесят: 80, девяносто: 90, сто: 100, двести: 200, триста: 300, полчаса: 30,
+  ноль: 0,
+  один: 1,
+  одна: 1,
+  одну: 1,
+  два: 2,
+  две: 2,
+  три: 3,
+  четыре: 4,
+  пять: 5,
+  шесть: 6,
+  семь: 7,
+  восемь: 8,
+  девять: 9,
+  десять: 10,
+  одиннадцать: 11,
+  двенадцать: 12,
+  тринадцать: 13,
+  четырнадцать: 14,
+  пятнадцать: 15,
+  шестнадцать: 16,
+  семнадцать: 17,
+  восемнадцать: 18,
+  девятнадцать: 19,
+  двадцать: 20,
+  тридцать: 30,
+  сорок: 40,
+  пятьдесят: 50,
+  шестьдесят: 60,
+  семьдесят: 70,
+  восемьдесят: 80,
+  девяносто: 90,
+  сто: 100,
+  двести: 200,
+  триста: 300,
+  полчаса: 30,
 };
 function wordsToNumber(text) {
   const digits = String(text).match(/\d+/);
   if (digits) return Number(digits[0]);
   let sum = null;
-  for (const w of String(text).toLowerCase().replace(/ё/g, 'е').split(/[^а-я]+/)) {
+  for (const w of String(text)
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .split(/[^а-я]+/)) {
     if (w in NUM_WORDS) sum = (sum || 0) + NUM_WORDS[w];
     else if (sum !== null) break; // число закончилось
   }
@@ -62,7 +96,7 @@ function durationFromText(text) {
     if (n === null && /^(секунд|минут|часов)$/.test(m[2])) {
       const after = t.slice(stop).match(/^\s+(?:через\s+|на\s+)?(\d+|[а-я]+(?: [а-я]+)?)/);
       const later = after && wordsToNumber(after[1]);
-      if (later !== null && later !== undefined) (n = later), (stop += after[0].length);
+      if (later !== null && later !== undefined) ((n = later), (stop += after[0].length));
     }
     if (n === null && m[1] && !/^(через|на|за|в)$/.test(m[1].split(' ').pop())) continue;
     total = (total || 0) + (n ?? 1) * unit;

@@ -32,28 +32,31 @@ function loginItem() {
 // Автозапуск Electron умеет только на Windows и macOS; на Linux пункт не показываем
 const LOGIN_ITEM_LABEL = { win32: 'Запускать вместе с Windows', darwin: 'Открывать при входе в систему' }[process.platform];
 
-function createTray({ name, onShow, onToggleMic, onCheckUpdates, onQuit, hotkey }) {
+function createTray({ name, onShow, onToggleMic, onSettings, onCheckUpdates, onQuit, hotkey }) {
   const tray = new Tray(drawReactor(process.platform === 'darwin' ? 22 : 32)); // строка меню macOS ниже панели задач
   tray.setToolTip(`${name} — ${hotkey}`);
 
   const rebuild = () =>
     tray.setContextMenu(
-      Menu.buildFromTemplate([
-        { label: `Показать (${hotkey})`, click: onShow },
-        { label: 'Микрофон вкл/выкл', click: onToggleMic },
-        LOGIN_ITEM_LABEL && {
-          label: LOGIN_ITEM_LABEL,
-          type: 'checkbox',
-          checked: app.getLoginItemSettings(loginItem()).openAtLogin,
-          click: (item) => {
-            app.setLoginItemSettings({ ...loginItem(), openAtLogin: item.checked });
-            rebuild();
+      Menu.buildFromTemplate(
+        [
+          { label: `Показать (${hotkey})`, click: onShow },
+          { label: 'Микрофон вкл/выкл', click: onToggleMic },
+          onSettings && { label: 'Настройки…', click: onSettings },
+          LOGIN_ITEM_LABEL && {
+            label: LOGIN_ITEM_LABEL,
+            type: 'checkbox',
+            checked: app.getLoginItemSettings(loginItem()).openAtLogin,
+            click: (item) => {
+              app.setLoginItemSettings({ ...loginItem(), openAtLogin: item.checked });
+              rebuild();
+            },
           },
-        },
-        { label: 'Проверить обновления', click: onCheckUpdates },
-        { type: 'separator' },
-        { label: 'Выход', click: onQuit },
-      ].filter(Boolean)),
+          { label: 'Проверить обновления', click: onCheckUpdates },
+          { type: 'separator' },
+          { label: 'Выход', click: onQuit },
+        ].filter(Boolean),
+      ),
     );
 
   rebuild();

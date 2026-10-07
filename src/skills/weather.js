@@ -14,13 +14,34 @@ const getJson = async (url, attempt = 1) => {
 };
 
 const WMO = {
-  0: 'ясно', 1: 'в основном ясно', 2: 'переменная облачность', 3: 'пасмурно',
-  45: 'туман', 48: 'изморозь и туман',
-  51: 'лёгкая морось', 53: 'морось', 55: 'сильная морось', 56: 'ледяная морось', 57: 'ледяная морось',
-  61: 'небольшой дождь', 63: 'дождь', 65: 'сильный дождь', 66: 'ледяной дождь', 67: 'ледяной дождь',
-  71: 'небольшой снег', 73: 'снег', 75: 'сильный снег', 77: 'снежная крупа',
-  80: 'ливень', 81: 'ливни', 82: 'сильные ливни', 85: 'снегопад', 86: 'сильный снегопад',
-  95: 'гроза', 96: 'гроза с градом', 99: 'сильная гроза с градом',
+  0: 'ясно',
+  1: 'в основном ясно',
+  2: 'переменная облачность',
+  3: 'пасмурно',
+  45: 'туман',
+  48: 'изморозь и туман',
+  51: 'лёгкая морось',
+  53: 'морось',
+  55: 'сильная морось',
+  56: 'ледяная морось',
+  57: 'ледяная морось',
+  61: 'небольшой дождь',
+  63: 'дождь',
+  65: 'сильный дождь',
+  66: 'ледяной дождь',
+  67: 'ледяной дождь',
+  71: 'небольшой снег',
+  73: 'снег',
+  75: 'сильный снег',
+  77: 'снежная крупа',
+  80: 'ливень',
+  81: 'ливни',
+  82: 'сильные ливни',
+  85: 'снегопад',
+  86: 'сильный снегопад',
+  95: 'гроза',
+  96: 'гроза с градом',
+  99: 'сильная гроза с градом',
 };
 
 // Кэш: координаты городов не меняются, а один ответ Open-Meteo — это сразу текущая погода и прогноз на 16 дней,
@@ -70,16 +91,17 @@ async function forecastFor(place, { fresh = false } = {}) {
 function refreshAsked() {
   for (const [key, { place, at }] of asked) {
     if (Date.now() - at > 86_400_000) asked.delete(key);
-    else forecastFor(place, { fresh: true }).catch(() => {}).finally(() => asked.set(key, { place, at }));
+    else
+      forecastFor(place, { fresh: true })
+        .catch(() => {})
+        .finally(() => asked.set(key, { place, at }));
   }
 }
 
 async function geocodeOnline(city) {
   const variants = [city, city.replace(/(ом|ем|е|у|ю|и|а|я)$/i, '')].filter((v, i, a) => v.length > 1 && a.indexOf(v) === i);
   for (const name of variants) {
-    const geo = await getJson(
-      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1&language=ru`,
-    );
+    const geo = await getJson(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1&language=ru`);
     if (geo.results?.[0]) return geo.results[0];
   }
   return null;
@@ -180,7 +202,9 @@ function homeCity(ctx) {
       mem.profile().city ||
       mem
         .allFactsText()
-        .match(/(?:[Жж]ив[её]т|[Жж]иву|[Нн]аходится|[Нн]ахожусь|[Пп]ереехал[аи]?|[Ии]з города|[Сс]тоит)\s+(?:(?:в|во|из)\s+)?([А-ЯЁ][а-яё-]+)/)?.[1];
+        .match(
+          /(?:[Жж]ив[её]т|[Жж]иву|[Нн]аходится|[Нн]ахожусь|[Пп]ереехал[аи]?|[Ии]з города|[Сс]тоит)\s+(?:(?:в|во|из)\s+)?([А-ЯЁ][а-яё-]+)/,
+        )?.[1];
     if (city) return city;
   }
   return ctx.config.city;
@@ -188,8 +212,25 @@ function homeCity(ctx) {
 
 module.exports = {
   id: 'weather',
+  needs: ['now', 'city'],
   title: 'погода сейчас и прогноз на завтра в любом городе',
-  keywords: ['погод', 'прогноз', 'градус', 'температур', 'дожд', 'снег', 'холодн', 'тепло', 'жарк', 'зонт', 'ветер', 'ветр', 'мороз', 'гроз', 'на улице'],
+  keywords: [
+    'погод',
+    'прогноз',
+    'градус',
+    'температур',
+    'дожд',
+    'снег',
+    'холодн',
+    'тепло',
+    'жарк',
+    'зонт',
+    'ветер',
+    'ветр',
+    'мороз',
+    'гроз',
+    'на улице',
+  ],
   homeCity,
   parseWhen,
   tools: [
@@ -200,10 +241,16 @@ module.exports = {
       arg: '"город|когда": когда — сегодня, завтра, послезавтра, день недели, «через 3 дня», дата «28 сентября», «выходные» или «неделя»; город можно не указывать — возьму город собеседника',
       examples: [
         ['какая погода', { addressed: true, say: 'Сейчас посмотрю.', actions: [{ tool: 'weather', arg: '' }] }],
-        ['что завтра в Казани с погодой', { addressed: true, say: 'Сейчас посмотрю.', actions: [{ tool: 'weather', arg: 'Казань|завтра' }] }],
+        [
+          'что завтра в Казани с погодой',
+          { addressed: true, say: 'Сейчас посмотрю.', actions: [{ tool: 'weather', arg: 'Казань|завтра' }] },
+        ],
         ['какая погода будет в субботу', { addressed: true, say: 'Сейчас посмотрю.', actions: [{ tool: 'weather', arg: '|суббота' }] }],
         ['прогноз на неделю', { addressed: true, say: 'Сейчас посмотрю.', actions: [{ tool: 'weather', arg: '|неделя' }] }],
-        ['погода через 3 дня в Казани', { addressed: true, say: 'Сейчас посмотрю.', actions: [{ tool: 'weather', arg: 'Казань|через 3 дня' }] }],
+        [
+          'погода через 3 дня в Казани',
+          { addressed: true, say: 'Сейчас посмотрю.', actions: [{ tool: 'weather', arg: 'Казань|через 3 дня' }] },
+        ],
       ],
       // «Москва|сегодня» — «сегодня» лишнее: без дня прогноз и так на сейчас
       normalize: (arg) => arg.replace(/\|\s*(сегодня|сейчас|today|now)\s*$/i, ''),
@@ -218,7 +265,9 @@ module.exports = {
     refresher.unref?.();
     // Первый вопрос о погоде после запуска — тоже без ожидания: город из настроек или общей памяти
     const city = homeCity({ shared: ctx.shared, config: ctx.config });
-    geocode(city).then((p) => p && forecastFor(p)).catch(() => {});
+    geocode(city)
+      .then((p) => p && forecastFor(p))
+      .catch(() => {});
   },
   forecast,
   geocode,

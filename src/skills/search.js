@@ -7,7 +7,7 @@ async function webSearch(query, ctx, request) {
   if (!results.length) {
     // DuckDuckGo ограничил частые запросы — справка из Википедии
     const w = await wiki(query).catch(() => null);
-    if (w) (results = [{ title: w.title, url: w.url, snippet: '' }]), (pages = [{ ...results[0], text: w.text }]);
+    if (w) ((results = [{ title: w.title, url: w.url, snippet: '' }]), (pages = [{ ...results[0], text: w.text }]));
   }
   // Если не нашлось ничего — модель ответит из своих знаний и предупредит об этом
   const read = new Set(pages.map((p) => p.url));
@@ -24,6 +24,7 @@ async function webSearch(query, ctx, request) {
 
 module.exports = {
   id: 'search',
+  needs: ['now', 'city'],
   title: 'ответ на конкретный вопрос из интернета: кто выиграл, сколько стоит, кто такой, что случилось; поиск в браузере',
   always: true, // запасной вариант для всего, что не нашлось по словам
   rules: [
@@ -39,14 +40,21 @@ module.exports = {
       use: 'факты, новости, люди, события — всё, что могло измениться или чего ты не знаешь; ответ будет зачитан голосом',
       arg: 'поисковый запрос',
       filler: 'Сейчас поищу.', // поиск идёт 2–5 секунд — сразу отозваться голосом
-      examples: [['кто такой Илон Маск', { addressed: true, say: 'Сейчас узнаю, сэр.', actions: [{ tool: 'web_search', arg: 'Илон Маск' }] }]],
+      examples: [
+        ['кто такой Илон Маск', { addressed: true, say: 'Сейчас узнаю, сэр.', actions: [{ tool: 'web_search', arg: 'Илон Маск' }] }],
+      ],
       run: webSearch,
     },
     {
       name: 'browser_search',
       use: 'ТОЛЬКО если пользователь сам просит показать или открыть поиск в браузере',
       arg: 'поисковый запрос',
-      examples: [['покажи в браузере рецепт борща', { addressed: true, say: 'Открываю поиск, сэр.', actions: [{ tool: 'browser_search', arg: 'рецепт борща' }] }]],
+      examples: [
+        [
+          'покажи в браузере рецепт борща',
+          { addressed: true, say: 'Открываю поиск, сэр.', actions: [{ tool: 'browser_search', arg: 'рецепт борща' }] },
+        ],
+      ],
       run: async (query, ctx) => {
         if (!query) return { ok: false, message: 'Что именно искать, сэр?' };
         await ctx.openExternal(ctx.config.search.browserUrl + encodeURIComponent(query));

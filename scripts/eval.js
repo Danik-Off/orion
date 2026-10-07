@@ -7,6 +7,8 @@
 //   npm run eval -- -v           — показать и удачные фразы
 //   npm run eval -- --only погод — только фразы, содержащие подстроку
 //   npm run eval -- --cases файл.json — другой набор фраз
+//   npm run eval -- --config файл.json — другой конфиг (test/fixtures/config.json — все навыки, как в тестах)
+//   npm run eval -- --planner single  — разбор одним промптом вместо двухшагового (сравнить)
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -31,8 +33,14 @@ const only = argv.includes('--only') ? argv[argv.indexOf('--only') + 1] : null;
 
 async function main() {
   const root = path.join(__dirname, '..');
-  const config = loadConfig(path.join(root, 'config.json'));
-  const { cases } = JSON.parse(fs.readFileSync(argv.includes('--cases') ? path.resolve(argv[argv.indexOf('--cases') + 1]) : path.join(root, 'test/fixtures/eval-cases.json'), 'utf8'));
+  const config = loadConfig(argv.includes('--config') ? path.resolve(argv[argv.indexOf('--config') + 1]) : path.join(root, 'config.json'));
+  if (argv.includes('--planner')) config.planner = argv[argv.indexOf('--planner') + 1]; // two-step или single
+  const { cases } = JSON.parse(
+    fs.readFileSync(
+      argv.includes('--cases') ? path.resolve(argv[argv.indexOf('--cases') + 1]) : path.join(root, 'test/fixtures/eval-cases.json'),
+      'utf8',
+    ),
+  );
   const list = cases.filter((c) => !only || c.text.includes(only));
 
   const llama = createLlamaServer({ config, modelsDir: path.resolve(root, config.speech.modelsDir || 'models') });
@@ -46,7 +54,14 @@ async function main() {
     if (messages[0].content.startsWith('Ты — модуль долгой памяти')) return Promise.resolve('{"facts":[]}');
     calls++;
     promptChars += messages.reduce((n, m) => n + m.content.length, 0);
-    return chat(messages, ...rest);
+    // --trace — показать каждый вызов модели: начало промпта, что спросили и что она ответила
+    if (!flag('--trace')) return chat(messages, ...rest);
+    return chat(messages, ...rest).then((raw) => {
+      console.log(
+        `   · ${messages[0].content.slice(0, 50).replace(/\n/g, ' ')}… | ${messages.at(-1).content.replace(/\n/g, ' / ')}\n     → ${raw}`,
+      );
+      return raw;
+    });
   };
 
   const registry = createSkillRegistry(require('../src/skills'), { config, ctx: { config }, audit: () => {} });
@@ -57,8 +72,26 @@ async function main() {
   if (!flag('--quick')) skills.quickPlan = () => null;
   if (flag('--all')) skills.select = () => registry.ids();
 
+  // --router файл.gguf — весь путь: маленькая модель → узкий промпт → большая (по умолчанию — только большая)
+  let router = null;
+  const stages = {};
+  if (argv.includes('--router')) {
+    const { createRouter } = require('../src/core/router');
+    const model = argv[argv.indexOf('--router') + 1];
+    config.router = { ...config.router, enabled: true, collect: false, model };
+    const routerServer = createLlamaServer({
+      config: { ...config, model, numCtx: 2048, llamaCpp: { ...config.llamaCpp, gpuLayers: config.router.gpuLayers, slots: 1 } },
+      modelsDir: path.resolve(root, config.speech.modelsDir || 'models'),
+      name: 'router',
+    });
+    process.on('exit', () => routerServer.stop());
+    router = createRouter({ config, server: routerServer, skills, audit: () => {} });
+    await routerServer.ensure();
+  }
   const memory = createMemory({ dir: fs.mkdtempSync(path.join(os.tmpdir(), 'orion-eval-')) });
-  const assistant = createAssistant({ config, llm, skills, memory, audit: () => {}, notify: () => {} });
+  // Какая ступень ответила (router — сразу, focused — узкий промпт, model — полный разбор)
+  const audit = (e) => e.plan?.stage && (stages[e.plan.stage] = (stages[e.plan.stage] || 0) + 1);
+  const assistant = createAssistant({ config, llm, skills, memory, audit, notify: () => {}, router });
   await assistant.warmup();
   const person = { id: 'eval', honorific: 'сэр' };
 
@@ -102,13 +135,16 @@ async function main() {
     }
     for (const bad of c.not || []) if (tools.includes(bad)) problems.push(`лишний ${bad}`);
     // say — регулярное выражение для ответа; notSay — чего в ответе быть не должно
-    if (c.say && !r.ignored && !new RegExp(c.say, 'iu').test(r.say || '')) problems.push(`ответ не /${c.say}/: «${String(r.say).slice(0, 60)}»`);
+    if (c.say && !r.ignored && !new RegExp(c.say, 'iu').test(r.say || ''))
+      problems.push(`ответ не /${c.say}/: «${String(r.say).slice(0, 60)}»`);
     if (c.notSay && new RegExp(c.notSay, 'iu').test(r.say || '')) problems.push(`в ответе /${c.notSay}/`);
     const ok = !problems.length;
     passed += ok;
     const extra = calls - callsBefore > 1 ? ` (+${calls - callsBefore - 1} повтор)` : '';
     if (!ok || flag('-v')) {
-      rows.push(`${ok ? '✓' : '✗'} ${String(dt).padStart(5)} мс  ${c.text.padEnd(48)} ${r.ignored ? 'ignored' : JSON.stringify(actions)}${extra}${ok ? '' : `  ← ${problems.join(', ')}`}`);
+      rows.push(
+        `${ok ? '✓' : '✗'} ${String(dt).padStart(5)} мс  ${c.text.padEnd(48)} ${r.ignored ? 'ignored' : JSON.stringify(actions)}${extra}${ok ? '' : `  ← ${problems.join(', ')}`}`,
+      );
     }
   }
   times.sort((a, b) => a - b);
@@ -119,6 +155,12 @@ async function main() {
       `среднее ${Math.round(time / list.length)} мс, p90 ${times[Math.floor(times.length * 0.9)]} мс, ` +
       `промпт в среднем ${Math.round(promptChars / calls)} символов (максимум ${llm.stats.maxPromptTokens} токенов), вызовов модели ${calls}`,
   );
+  if (router)
+    console.log(
+      `ступени: ${Object.entries(stages)
+        .map(([k, v]) => `${k} ${v}`)
+        .join(', ')}`,
+    );
   process.exit(0);
 }
 

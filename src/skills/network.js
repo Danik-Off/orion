@@ -60,11 +60,16 @@ async function network(arg) {
     const mbit = await speed().catch(() => null);
     return mbit === null
       ? { ok: false, message: 'Не удалось измерить скорость, сэр.' }
-      : { ok: true, speak: `Скорость загрузки около ${mbit} ${plural(mbit, 'мегабита', 'мегабит', 'мегабит')} в секунду, отклик ${ms(latency)}.` };
+      : {
+          ok: true,
+          speak: `Скорость загрузки около ${mbit} ${plural(mbit, 'мегабита', 'мегабит', 'мегабит')} в секунду, отклик ${ms(latency)}.`,
+        };
   }
   if (/^(ip|айпи)/.test(a)) {
     const local = localIp();
-    const pub = await fetch('https://api.ipify.org', { signal: AbortSignal.timeout(5000) }).then((r) => r.text()).catch(() => null);
+    const pub = await fetch('https://api.ipify.org', { signal: AbortSignal.timeout(5000) })
+      .then((r) => r.text())
+      .catch(() => null);
     return { ok: true, speak: `Локальный адрес ${local || 'не найден'}${pub ? `, внешний ${pub}` : ''}.` };
   }
   const [latency, w] = await Promise.all([ping(), wifi()]);
@@ -77,6 +82,7 @@ async function network(arg) {
 
 module.exports = {
   id: 'network',
+  needs: [],
   platforms: ['win32'], // PowerShell и программы Windows
   title: 'интернет: есть ли связь, Wi-Fi и сигнал, скорость, IP-адрес',
   keywords: ['интернет', 'сеть', 'wi-fi', 'wifi', 'вайфай', 'вай фай', 'скорость интернета', 'пинг', 'ip', 'айпи', 'роутер', 'связь'],
@@ -86,7 +92,12 @@ module.exports = {
       use: 'проверить интернет и Wi-Fi, измерить скорость, узнать IP',
       arg: 'пусто — проверка связи; "speed" — скорость; "ip" — адреса',
       argEnum: ['', 'speed', 'ip'],
-      examples: [['какая у меня скорость интернета', { addressed: true, say: 'Измеряю, это секунд десять.', actions: [{ tool: 'network', arg: 'speed' }] }]],
+      examples: [
+        [
+          'какая у меня скорость интернета',
+          { addressed: true, say: 'Измеряю, это секунд десять.', actions: [{ tool: 'network', arg: 'speed' }] },
+        ],
+      ],
       run: network,
     },
   ],

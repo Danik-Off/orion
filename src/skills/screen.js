@@ -4,7 +4,7 @@ const { wordsToNumber, plural } = require('../lib/ru');
 
 // Путь строит сам скрипт, имя файла (только цифры и дефисы) передаётся через переменную окружения
 const SHOT =
-  "Add-Type -AssemblyName System.Windows.Forms, System.Drawing; Add-Type -Namespace O -Name D -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool SetProcessDPIAware();'; " +
+  'Add-Type -AssemblyName System.Windows.Forms, System.Drawing; Add-Type -Namespace O -Name D -MemberDefinition \'[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();\'; ' +
   '[void][O.D]::SetProcessDPIAware(); $b = [System.Windows.Forms.SystemInformation]::VirtualScreen; ' +
   '$bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height; $g = [System.Drawing.Graphics]::FromImage($bmp); ' +
   '$g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size); ' +
@@ -20,7 +20,8 @@ async function screenshot(arg, ctx) {
   return { ok: true, speak: 'Снимок экрана сохранён в папку «Изображения», «Screenshots».' };
 }
 
-const GET_BRIGHTNESS = '(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction Stop | Select-Object -First 1).CurrentBrightness';
+const GET_BRIGHTNESS =
+  '(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction Stop | Select-Object -First 1).CurrentBrightness';
 const setBrightness = (n) =>
   powershell(
     'Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction Stop | ' +
@@ -47,6 +48,7 @@ async function brightness(arg) {
 
 module.exports = {
   id: 'screen',
+  needs: [],
   platforms: ['win32'], // PowerShell и программы Windows
   title: 'снимок экрана (скриншот), яркость экрана',
   keywords: ['скрин', 'снимок экрана', 'сфоткай экран', 'яркост', 'ярче', 'темнее', 'экран'],

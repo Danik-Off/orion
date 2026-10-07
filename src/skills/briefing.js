@@ -17,7 +17,8 @@ async function briefing(arg, ctx) {
   if (weather) parts.push(weather);
 
   const today = reminders.upcoming(24).filter((r) => new Date(r.at).toDateString() === new Date().toDateString());
-  if (today.length) parts.push(`Напоминания на сегодня: ${today.map((r) => `${reminders.when(r).replace(/^сегодня /, '')} — ${r.text}`).join('; ')}.`);
+  if (today.length)
+    parts.push(`Напоминания на сегодня: ${today.map((r) => `${reminders.when(r).replace(/^сегодня /, '')} — ${r.text}`).join('; ')}.`);
   const todo = await safe('note_show', 'дела');
   if (todo && !/пуст/.test(todo)) parts.push(todo);
   if (news && !/brief/.test(arg)) parts.push(news);
@@ -26,7 +27,11 @@ async function briefing(arg, ctx) {
 
 // «доброе утро», «что у меня на сегодня», «утренняя сводка»
 function quick(text) {
-  const t = text.toLowerCase().replace(/ё/g, 'е').replace(/[^а-я ]+/g, '').trim();
+  const t = text
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[^а-я ]+/g, '')
+    .trim();
   if (/^(доброе утро|что у меня (на|сегодня)( сегодня)?|(утренняя )?сводка( на день| дня)?|брифинг|план на день)$/.test(t)) {
     return { addressed: true, say: 'Собираю сводку.', actions: [{ tool: 'briefing', arg: '' }] };
   }
@@ -35,6 +40,7 @@ function quick(text) {
 
 module.exports = {
   id: 'briefing',
+  needs: ['now', 'city'],
   title: 'сводка на день: погода, напоминания, дела, новости',
   keywords: ['доброе утро', 'сводк', 'брифинг', 'на сегодня', 'план на день', 'что у меня'],
   quick,

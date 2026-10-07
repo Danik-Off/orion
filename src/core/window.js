@@ -1,11 +1,13 @@
 // Окно ассистента в трёх режимах: полное, компактная плашка в углу (не забирает фокус) и скрытое.
+// Полное — обычное окно: в панели задач, сворачивается, поверх остальных — только если его закрепили (pinned).
+// Плашка всегда поверх: она маленькая и появляется на время ответа.
 const { BrowserWindow, screen } = require('electron');
 
 const FULL = { width: 400, height: 620 };
 const ORB = { width: 380, height: 96 };
 const ORB_MAX_SHARE = 0.6; // плашка с длинным текстом растёт вверх, но не выше этой доли экрана
 
-function createWindowManager({ title, preload, html }) {
+function createWindowManager({ title, preload, html, pinned = false }) {
   let win = null;
   let mode = 'hidden';
   let fullBounds = null; // куда пользователь передвинул полное окно
@@ -19,8 +21,8 @@ function createWindowManager({ title, preload, html }) {
       resizable: false,
       maximizable: false,
       fullscreenable: false,
-      alwaysOnTop: true,
-      skipTaskbar: true, // живёт в трее
+      alwaysOnTop: pinned,
+      skipTaskbar: true, // скрытое и плашка живут в трее; полное окно — в панели задач (applyLayer)
       show: false,
       transparent: true, // в компактном режиме видны только реактор и подложка под текстом
       backgroundColor: '#00000000',
@@ -43,6 +45,12 @@ function createWindowManager({ title, preload, html }) {
     return new Promise((resolve) => win.once('ready-to-show', resolve));
   }
 
+  // Слой окна под режим: плашка — поверх всего и без кнопки в панели задач; полное — как обычное окно
+  function applyLayer(next) {
+    win.setAlwaysOnTop(next === 'orb' || pinned, 'floating');
+    win.setSkipTaskbar(next !== 'full');
+  }
+
   const area = () => screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
 
   // collapse: полное окно закрыли посреди диалога — свернуть его в плашку.
@@ -51,9 +59,13 @@ function createWindowManager({ title, preload, html }) {
     if (!win) return;
     if (next === 'hidden') {
       win.hide();
+      applyLayer('hidden');
     } else if (next === 'orb') {
-      if (mode === 'full' && !collapse) return; // полное окно уже на экране
-      if (mode !== 'orb' || !win.isVisible()) placeOrb();
+      const minimized = win.isMinimized();
+      if (mode === 'full' && !collapse && !minimized) return; // полное окно уже на экране
+      if (minimized) win.restore(); // свёрнутое окно отвечает плашкой в углу
+      applyLayer('orb');
+      if (mode !== 'orb' || minimized || !win.isVisible()) placeOrb();
       win.showInactive();
       win.moveTop(); // поверх остальных окон, даже если другое окно тоже «всегда сверху»
     } else if (next === 'full') {
@@ -67,6 +79,8 @@ function createWindowManager({ title, preload, html }) {
           },
         );
       }
+      applyLayer('full');
+      if (win.isMinimized()) win.restore();
       win.show();
       win.focus();
     }
@@ -88,6 +102,16 @@ function createWindowManager({ title, preload, html }) {
     if (mode === 'orb') placeOrb();
   }
 
+  // Закрепить полное окно поверх остальных
+  function setPinned(on) {
+    pinned = on === true;
+    if (win && mode === 'full') applyLayer('full');
+  }
+
+  function minimize() {
+    if (win && mode === 'full') win.minimize();
+  }
+
   function send(channel, ...args) {
     win?.webContents.send(channel, ...args);
   }
@@ -98,6 +122,9 @@ function createWindowManager({ title, preload, html }) {
     setOrbHeight,
     send,
     mode: () => mode,
+    pinned: () => pinned,
+    setPinned,
+    minimize,
     isOurs: (e) => !!win && e.sender === win.webContents,
     webContents: () => win?.webContents,
   };

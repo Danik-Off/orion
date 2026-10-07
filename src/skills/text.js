@@ -3,7 +3,11 @@
 const { pasteClipboard } = require('../lib/windows');
 
 const MAX_CHARS = 6000;
-const clean = (s) => String(s).replace(/[*_#`>]+/g, '').replace(/\s+\n/g, '\n').trim();
+const clean = (s) =>
+  String(s)
+    .replace(/[*_#`>]+/g, '')
+    .replace(/\s+\n/g, '\n')
+    .trim();
 
 async function transform(ctx, task, text) {
   const out = await ctx.llm.chat([
@@ -64,9 +68,25 @@ async function typeText(text, ctx) {
 
 module.exports = {
   id: 'text',
+  needs: [],
   platforms: ['win32'], // PowerShell и программы Windows
   title: 'буфер обмена (прочитать, пересказать, перевести, исправить), перевод фраз, диктовка текста в активное окно',
-  keywords: ['буфер', 'скопир', 'копир', 'перевед', 'перевод', 'по-английски', 'по английски', 'как будет', 'напечатай', 'надиктуй', 'диктов', 'введи текст', 'исправь', 'перескажи'],
+  keywords: [
+    'буфер',
+    'скопир',
+    'копир',
+    'перевед',
+    'перевод',
+    'по-английски',
+    'по английски',
+    'как будет',
+    'напечатай',
+    'надиктуй',
+    'диктов',
+    'введи текст',
+    'исправь',
+    'перескажи',
+  ],
   rules: [
     'Короткую фразу можно перевести и без инструмента; translate — для длинного текста или если просят точный перевод.',
     '«Напечатай / набери …» — type_text с текстом после этого слова, даже если в тексте есть время («через 10 минут» — это текст, а не таймер).',
@@ -74,13 +94,20 @@ module.exports = {
   tools: [
     {
       name: 'clipboard',
+      llmArg: true,
       use: 'сделать что-то со скопированным текстом',
       arg: 'read | summary | fix | explain | "translate язык"',
-      examples: [['переведи что я скопировал на английский', { addressed: true, say: 'Перевожу.', actions: [{ tool: 'clipboard', arg: 'translate английский' }] }]],
+      examples: [
+        [
+          'переведи что я скопировал на английский',
+          { addressed: true, say: 'Перевожу.', actions: [{ tool: 'clipboard', arg: 'translate английский' }] },
+        ],
+      ],
       // Что сделать и на какой язык — надёжнее видно по самой фразе, чем по аргументу модели
       normalize: (arg, text) => {
         const t = text.toLowerCase();
-        if (/перевед|перевод/.test(t)) return `translate ${t.match(/на ([а-я]+(?:ий|ой|ый))/)?.[1] || arg.replace(/^translate\s*/i, '') || 'английский'}`;
+        if (/перевед|перевод/.test(t))
+          return `translate ${t.match(/на ([а-я]+(?:ий|ой|ый))/)?.[1] || arg.replace(/^translate\s*/i, '') || 'английский'}`;
         if (/переска|кратко|суть|о ч[её]м/.test(t)) return 'summary';
         if (/исправ|ошибк|опечат/.test(t)) return 'fix';
         if (/объясн/.test(t)) return 'explain';
@@ -91,15 +118,22 @@ module.exports = {
     },
     {
       name: 'translate',
+      llmArg: true,
       use: 'перевести текст на другой язык',
       arg: '"язык|текст"',
       run: translate,
     },
     {
       name: 'type_text',
+      llmArg: true,
       use: 'напечатать продиктованный текст туда, где стоит курсор',
       arg: 'текст ровно как продиктовал пользователь, с пунктуацией',
-      examples: [['напечатай привет, буду через 10 минут', { addressed: true, say: '', actions: [{ tool: 'type_text', arg: 'Привет, буду через 10 минут.' }] }]],
+      examples: [
+        [
+          'напечатай привет, буду через 10 минут',
+          { addressed: true, say: '', actions: [{ tool: 'type_text', arg: 'Привет, буду через 10 минут.' }] },
+        ],
+      ],
       run: typeText,
     },
   ],

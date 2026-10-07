@@ -9,10 +9,30 @@ const { normalize, score, levenshtein } = require('../lib/app-catalog');
 const { plural } = require('../lib/ru');
 
 // Не игры: библиотеки, инструменты, серверы
-const NOT_GAMES = /redistributable|steamvr|dedicated server|soundtrack|proton|steam linux runtime|sdk|godot|porthole|wallpaper engine|tool/i;
+const NOT_GAMES =
+  /redistributable|steamvr|dedicated server|soundtrack|proton|steam linux runtime|sdk|godot|porthole|wallpaper engine|tool/i;
 // Как игры называют вслух
-const ALIASES = { кс: 'counter-strike', контра: 'counter-strike', контру: 'counter-strike', контр: 'counter', каэс: 'counter-strike', страйк: 'strike', дота: 'dota', доту: 'dota', пубг: 'pubg', пабг: 'pubg', гта: 'grand theft auto', раст: 'rust' };
-const CURRENCY = { RUB: ['рубль', 'рубля', 'рублей'], USD: ['доллар', 'доллара', 'долларов'], EUR: ['евро', 'евро', 'евро'], KZT: ['тенге', 'тенге', 'тенге'], UAH: ['гривна', 'гривны', 'гривен'] };
+const ALIASES = {
+  кс: 'counter-strike',
+  контра: 'counter-strike',
+  контру: 'counter-strike',
+  контр: 'counter',
+  каэс: 'counter-strike',
+  страйк: 'strike',
+  дота: 'dota',
+  доту: 'dota',
+  пубг: 'pubg',
+  пабг: 'pubg',
+  гта: 'grand theft auto',
+  раст: 'rust',
+};
+const CURRENCY = {
+  RUB: ['рубль', 'рубля', 'рублей'],
+  USD: ['доллар', 'доллара', 'долларов'],
+  EUR: ['евро', 'евро', 'евро'],
+  KZT: ['тенге', 'тенге', 'тенге'],
+  UAH: ['гривна', 'гривны', 'гривен'],
+};
 
 let steamDir = null;
 let names = new Map(); // appid → название (установленные + узнанные в магазине)
@@ -22,7 +42,9 @@ async function findSteam(config) {
   const fromConfig = config.steam?.path;
   const fromRegistry = fromConfig
     ? null
-    : (await powershell("(Get-ItemProperty 'HKCU:\\Software\\Valve\\Steam' -ErrorAction SilentlyContinue).SteamPath").catch(() => '')).trim();
+    : (
+        await powershell("(Get-ItemProperty 'HKCU:\\Software\\Valve\\Steam' -ErrorAction SilentlyContinue).SteamPath").catch(() => '')
+      ).trim();
   const dir = fromConfig || fromRegistry;
   steamDir = dir && fs.existsSync(dir) ? path.normalize(dir) : null;
   return steamDir;
@@ -124,7 +146,9 @@ async function nameOf(id) {
 
 // Игра в магазине по названию: { id, name } или null
 async function searchStore(query) {
-  const found = await store(`https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(query)}&cc=us&l=russian`).catch(() => null);
+  const found = await store(`https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(query)}&cc=us&l=russian`).catch(
+    () => null,
+  );
   const item = found?.items?.[0];
   if (!item) return null;
   const id = String(item.id);
@@ -155,7 +179,10 @@ async function stats(arg, ctx) {
   const all = playStats(dir);
   const a = String(arg).trim();
   if (/^(games|игры|установлен)/i.test(a)) {
-    return { ok: true, speak: `Установлено ${games.length} ${plural(games.length, 'игра', 'игры', 'игр')}: ${games.map((g) => g.name).join(', ')}.` };
+    return {
+      ok: true,
+      speak: `Установлено ${games.length} ${plural(games.length, 'игра', 'игры', 'игр')}: ${games.map((g) => g.name).join(', ')}.`,
+    };
   }
   if (a) {
     const known = [...games, ...[...names].map(([id, name]) => ({ id, name }))];
@@ -180,7 +207,10 @@ async function stats(arg, ctx) {
   const [recent] = await gamesOnly([...all].sort((x, y) => y.last - x.last).slice(0, 5), 1);
   if (!top.length) return { ok: true, speak: 'Статистики игр пока нет, сэр.' };
   const named = top.map((s) => `${s.name} — ${hours(s.minutes)}`);
-  return { ok: true, speak: `Больше всего наиграно: ${named.join(', ')}.${recent ? ` Последний раз играли в ${recent.name} ${ago(recent.last)}.` : ''}` };
+  return {
+    ok: true,
+    speak: `Больше всего наиграно: ${named.join(', ')}.${recent ? ` Последний раз играли в ${recent.name} ${ago(recent.last)}.` : ''}`,
+  };
 }
 
 // Цена и скидка в магазине. В регионе ru магазин цен не отдаёт — тогда следующий регион из списка
@@ -191,7 +221,9 @@ async function price(arg, ctx) {
   const item = await searchStore(ALIASES[q.toLowerCase()] || q);
   if (!item) return { ok: false, message: `Не нашёл «${q}» в магазине Steam, сэр.` };
   for (const cc of [...new Set(regions)]) {
-    const d = await store(`https://store.steampowered.com/api/appdetails?appids=${item.id}&cc=${cc}&filters=price_overview,basic`).catch(() => null);
+    const d = await store(`https://store.steampowered.com/api/appdetails?appids=${item.id}&cc=${cc}&filters=price_overview,basic`).catch(
+      () => null,
+    );
     const data = d && Object.values(d)[0]?.success && Object.values(d)[0].data;
     if (!data) continue;
     if (data.is_free) return { ok: true, speak: `${item.name} — бесплатная игра.` };
@@ -200,7 +232,9 @@ async function price(arg, ctx) {
     const value = Math.round(p.final / 100);
     const cur = CURRENCY[p.currency];
     const money = cur ? `${value} ${plural(value, ...cur)}` : p.final_formatted;
-    const sale = p.discount_percent ? `, сейчас скидка ${p.discount_percent} ${plural(p.discount_percent, 'процент', 'процента', 'процентов')}` : ', скидки сейчас нет';
+    const sale = p.discount_percent
+      ? `, сейчас скидка ${p.discount_percent} ${plural(p.discount_percent, 'процент', 'процента', 'процентов')}`
+      : ', скидки сейчас нет';
     return { ok: true, speak: `${item.name} стоит ${money}${sale}.` };
   }
   return { ok: false, message: `Цену «${item.name}» магазин сейчас не показывает, сэр.` };
@@ -208,13 +242,31 @@ async function price(arg, ctx) {
 
 module.exports = {
   id: 'steam',
+  needs: [],
   title: 'игры Steam: запустить игру, сколько наиграно и когда играл, цена и скидка в магазине',
   keywords: [
-    'стим', 'steam', 'игр', 'поигра', 'наиграл', 'скидк', 'распродаж', 'запусти игру',
+    'стим',
+    'steam',
+    'игр',
+    'поигра',
+    'наиграл',
+    'скидк',
+    'распродаж',
+    'запусти игру',
     // названия установленных игр — на лету: «запусти дедлок» должно найти навык
     (text) => {
       const list = [...names.values()];
-      return list.length > 0 && text.split(/\s+/).some((w) => w.length > 2 && findGame(w, list.map((name, id) => ({ id, name }))));
+      return (
+        list.length > 0 &&
+        text.split(/\s+/).some(
+          (w) =>
+            w.length > 2 &&
+            findGame(
+              w,
+              list.map((name, id) => ({ id, name })),
+            ),
+        )
+      );
     },
   ],
   rules: [

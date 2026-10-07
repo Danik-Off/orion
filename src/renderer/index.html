@@ -17,8 +17,11 @@
       <symbol id="i-sound-off" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4zM17 9l5 6M22 9l-5 6" /></symbol>
       <symbol id="i-new" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4h4" /></symbol>
       <symbol id="i-hide" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></symbol>
+      <symbol id="i-min" viewBox="0 0 24 24"><path d="M6 17h12" /></symbol>
+      <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-3 4h10l-3-4V3M12 13v8" /></symbol>
       <symbol id="i-owner" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></symbol>
       <symbol id="i-send" viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6" /></symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" /></symbol>
     </svg>
 
     <main class="app">
@@ -41,128 +44,14 @@
             <svg><use href="#i-sound" /></svg>
           </button>
           <button id="reset" class="icon" title="Новый разговор"><svg><use href="#i-new" /></svg></button>
+          <button id="settings-btn" class="icon" title="Настройки"><svg><use href="#i-gear" /></svg></button>
+          <button id="pin" class="icon" title="Поверх остальных окон" aria-pressed="false"><svg><use href="#i-pin" /></svg></button>
+          <button id="minimize" class="icon" title="Свернуть"><svg><use href="#i-min" /></svg></button>
           <button id="hide" class="icon" title="Скрыть в трей (Esc)"><svg><use href="#i-hide" /></svg></button>
         </div>
       </header>
 
-      <nav class="tabs" role="tablist">
-        <button class="tab on" data-view="chat" role="tab" aria-selected="true">Разговор</button>
-        <button class="tab" data-view="settings" role="tab" aria-selected="false">Настройки</button>
-      </nav>
 
-      <section id="settings" class="settings" hidden>
-        <div id="restart-bar" class="restart-bar" hidden>
-          <span>Часть изменений заработает после перезапуска.</span>
-          <button id="restart" class="btn primary">Перезапустить</button>
-        </div>
-        <div id="settings-error" class="settings-error" hidden></div>
-
-        <h3>Основное</h3>
-        <div class="group">
-          <label class="field">
-            <span>Имя ассистента</span>
-            <input data-key="name" maxlength="20" />
-            <small>На него же откликается голосом. После перезапуска.</small>
-          </label>
-          <label class="field">
-            <span>Город для погоды</span>
-            <input data-key="city" maxlength="60" />
-          </label>
-          <label class="field">
-            <span>Движок языковой модели</span>
-            <select data-key="backend" id="backend-select">
-              <option value="llamacpp">Встроенный (llama.cpp)</option>
-              <option value="ollama">Ollama — отдельная программа</option>
-            </select>
-            <small>Встроенный скачивается сам и лежит в папке models рядом с программой. После перезапуска.</small>
-          </label>
-          <label class="field">
-            <span>Языковая модель</span>
-            <select data-key="model" id="model-select"></select>
-            <small id="model-hint"></small>
-          </label>
-          <label class="field">
-            <span>Горячая клавиша</span>
-            <input data-key="hotkey" id="hotkey-input" readonly />
-            <small>Нажмите на поле и затем нужное сочетание.</small>
-          </label>
-        </div>
-
-        <h3>Голос</h3>
-        <div class="group">
-          <label class="field">
-            <span>Голос</span>
-            <div class="row">
-              <select data-key="speech.ttsSpeaker" data-type="number" id="speaker-select"></select>
-              <button type="button" id="voice-test" class="btn">Прослушать</button>
-            </div>
-          </label>
-          <label class="field">
-            <span>Скорость речи <b data-out="speech.ttsSpeed"></b></span>
-            <input type="range" data-key="speech.ttsSpeed" data-type="number" min="0.6" max="1.6" step="0.05" />
-          </label>
-          <label class="field">
-            <span>Качество звука</span>
-            <select data-key="speech.ttsSteps" data-type="number">
-              <option value="8">Быстро</option>
-              <option value="12">Обычно</option>
-              <option value="16">Чисто (медленнее)</option>
-            </select>
-          </label>
-          <label class="check">
-            <input type="checkbox" data-key="speech.stress" />
-            <span>Правильные ударения <small>«Зам<b>о</b>к на двери», «вс<b>ё</b> готово».</small></span>
-          </label>
-        </div>
-
-        <h3>Слух</h3>
-        <div class="group">
-          <label class="field">
-            <span>Ждать продолжения разговора, с <b data-out="speech.followUpSeconds"></b></span>
-            <input type="range" data-key="speech.followUpSeconds" data-type="number" min="3" max="20" step="1" />
-            <small>Сколько после ответа можно говорить без имени.</small>
-          </label>
-          <label class="field">
-            <span>Чувствительность к тихой речи <b data-out="speech.vadThreshold"></b></span>
-            <input type="range" data-key="speech.vadThreshold" data-type="number" min="0.15" max="0.6" step="0.05" />
-            <small>Меньше — слышит тише, но чаще реагирует на шум. После перезапуска.</small>
-          </label>
-          <label class="field">
-            <span>Слушать только знакомые голоса</span>
-            <select data-key="speech.speaker.require">
-              <option value="off">Нет, слушать всех</option>
-              <option value="followup">В продолжении разговора</option>
-              <option value="always">Всегда</option>
-            </select>
-          </label>
-          <label class="check">
-            <input type="checkbox" data-key="speech.listenOnStart" />
-            <span>Включать микрофон при запуске</span>
-          </label>
-          <label class="check">
-            <input type="checkbox" data-key="speech.echoCancellation" />
-            <span>Подавлять свой голос из колонок <small>После перезапуска.</small></span>
-          </label>
-        </div>
-
-        <h3>Обновления</h3>
-        <div class="group">
-          <label class="check">
-            <input type="checkbox" data-key="updates.notify" />
-            <span>Сообщать о новой версии при запуске <small>Спрошу голосом, обновлять ли.</small></span>
-          </label>
-          <div class="field">
-            <span>Версия <b id="app-version"></b></span>
-            <div class="row">
-              <button type="button" id="update-check" class="btn">Проверить сейчас</button>
-            </div>
-          </div>
-        </div>
-
-        <h3>Навыки</h3>
-        <small class="note">Отключённые навыки пропадут после перезапуска.</small>
-        <div id="skills-list" class="skills-list group"></div>
-      </section>
 
       <section class="stage">
         <button id="core" class="core" data-state="idle" title="Нажмите и говорите">
@@ -212,7 +101,7 @@
     </main>
 
     <script src="voice.js"></script>
-    <script src="settings.js"></script>
+    <script src="commands.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

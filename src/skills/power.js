@@ -33,7 +33,10 @@ async function power(arg, ctx, request = {}) {
   const what = restart ? 'Перезагрузить' : 'Выключить';
   if (!(await ctx.confirm(`${what} компьютер через ${minutes(min)}?`))) return { ok: false, message: 'Отменено, сэр.' };
   await launch('shutdown.exe', [restart ? '/r' : '/s', '/t', String(min * 60)]);
-  return { ok: true, speak: `${restart ? 'Перезагружу' : 'Выключу'} компьютер через ${minutes(min)}. Скажите «отмени выключение», если передумаете.` };
+  return {
+    ok: true,
+    speak: `${restart ? 'Перезагружу' : 'Выключу'} компьютер через ${minutes(min)}. Скажите «отмени выключение», если передумаете.`,
+  };
 }
 
 // Таймер сна: через N минут поставить на паузу всё, что играет
@@ -48,6 +51,7 @@ async function sleepAfter(arg, ctx) {
     for (const s of playing) await media.control('pause', s.app).catch(() => {});
     ctx.audit({ sleepTimer: 'музыка на паузе', sessions: playing.length });
   }, min * 60_000);
+  sleepTimer.unref?.();
   return { ok: true, speak: `Выключу музыку через ${minutes(min)}.` };
 }
 
@@ -81,8 +85,10 @@ const shownCommands = (commands) =>
 
 module.exports = {
   id: 'power',
+  needs: ['now'],
   platforms: ['win32'], // PowerShell и программы Windows
-  title: 'заблокировать компьютер, выключить или перезагрузить (сразу или через N минут), отменить выключение, спящий режим, таймер сна для музыки',
+  title:
+    'заблокировать компьютер, выключить или перезагрузить (сразу или через N минут), отменить выключение, спящий режим, таймер сна для музыки',
   keywords: ['выключ', 'перезагр', 'спящ', 'сон', 'усып', 'отмени выключение', 'таймер сна', 'через час', 'на ночь', 'заблок', 'блокир'],
   rules: [
     'Заблокировать компьютер и другие готовые команды — run_command; выключение и перезагрузка — power.',
@@ -93,18 +99,23 @@ module.exports = {
   tools: [
     {
       name: 'power',
+      llmArg: true,
       use: 'выключение/перезагрузка компьютера через N минут, отмена, сон',
       arg: '"shutdown МИНУТЫ" | "restart МИНУТЫ" | "sleep" | "cancel"',
       examples: [['выключи компьютер через час', { addressed: true, say: '', actions: [{ tool: 'power', arg: 'shutdown 60' }] }]],
       // Минуты — из самой фразы («через 10 минут»), если названы: модель путает их с секундами
       normalize: (arg, text) => {
         const sec = durationFromText(text);
-        return arg.replace(/^(shutdown|restart)\s+(\d+)$/, (m, verb, n) => `${verb} ${sec ? Math.round(sec / 60) : toMinutes(Number(n), 24 * 60)}`);
+        return arg.replace(
+          /^(shutdown|restart)\s+(\d+)$/,
+          (m, verb, n) => `${verb} ${sec ? Math.round(sec / 60) : toMinutes(Number(n), 24 * 60)}`,
+        );
       },
       run: power,
     },
     {
       name: 'sleep_timer',
+      llmArg: true,
       use: 'выключить музыку и видео через N минут (перед сном)',
       arg: 'МИНУТЫ (не секунды); "cancel" — отменить',
       examples: [['выключи музыку через полчаса', { addressed: true, say: '', actions: [{ tool: 'sleep_timer', arg: '30' }] }]],
@@ -116,6 +127,7 @@ module.exports = {
     },
     {
       name: 'run_command',
+      llmArg: true,
       use: 'готовая системная команда из списка',
       arg: 'ровно одно из списка команд', // список подставляется при старте, см. init
       run: runCommand,
@@ -126,6 +138,8 @@ module.exports = {
     const list = shownCommands(ctx.config.commands);
     tool.arg = `ровно одно из: ${list.join(', ') || '(нет)'}`;
     const lock = list.find((k) => /блок/i.test(k));
-    tool.examples = lock ? [['заблокируй компьютер', { addressed: true, say: 'Блокирую.', actions: [{ tool: 'run_command', arg: lock }] }]] : [];
+    tool.examples = lock
+      ? [['заблокируй компьютер', { addressed: true, say: 'Блокирую.', actions: [{ tool: 'run_command', arg: lock }] }]]
+      : [];
   },
 };

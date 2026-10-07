@@ -1,4 +1,5 @@
 // Голос: микрофон → распознавание в main, и озвучка ответов (свой голос Supertonic или, пока его нет, системный).
+/* exported createMic, createSpeaker, playChime */
 
 // Микрофон. Звук дальше этого окна и main-процесса никуда не уходит.
 function createMic({ onChange, onLevel, echoCancellation = () => true }) {
@@ -110,7 +111,7 @@ function createSpeaker({ ownVoice, onStart, onEnd }) {
       onEnd();
     };
     const began = () => {
-      if (!started) (started = true), onStart();
+      if (!started) ((started = true), onStart());
     };
 
     (async () => {

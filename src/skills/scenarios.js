@@ -11,7 +11,13 @@ let store = createStore(null, '', { scenarios: {} });
 let config = {};
 const MAX_STEPS = 8;
 
-const key = (s) => String(s).toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+const key = (s) =>
+  String(s)
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[^a-zа-я0-9 ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 const all = () => ({ ...(config.scenarios || {}), ...store.get().scenarios });
 const find = (name) => {
   const k = key(name).replace(/^(сценарий|режим|запусти|включи) /, '');
@@ -59,7 +65,10 @@ function listScenarios(arg) {
     return { ok: true, speak: `Сценарий «${name}» удалён.` };
   }
   const names = Object.keys(all());
-  return { ok: true, speak: names.length ? `Сценарии: ${names.join(', ')}.` : 'Сценариев пока нет. Научите меня: «когда я говорю „я дома“ — включи музыку».' };
+  return {
+    ok: true,
+    speak: names.length ? `Сценарии: ${names.join(', ')}.` : 'Сценариев пока нет. Научите меня: «когда я говорю „я дома“ — включи музыку».',
+  };
 }
 
 // Режим фокуса: закрыть отвлекающие программы (config.focus.close) и поставить таймер помодоро
@@ -82,6 +91,7 @@ function quick(text) {
 
 module.exports = {
   id: 'scenarios',
+  needs: [],
   title: 'сценарии и обучение командам (одна фраза → несколько действий), режим фокуса и помодоро',
   keywords: ['сценари', 'когда я говорю', 'когда скажу', 'научись', 'запомни команду', 'режим', 'фокус', 'помодоро', 'сосредоточ'],
   quick,
@@ -98,6 +108,8 @@ module.exports = {
     },
     {
       name: 'scenario_save',
+
+      llmArg: true,
       use: 'научиться новой команде: фраза → несколько действий',
       arg: '"название|команда 1; команда 2"',
       examples: [

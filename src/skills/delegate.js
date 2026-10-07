@@ -20,7 +20,8 @@ const AGENTS = {
 const MAX_OUTPUT = 200_000;
 // «Создай сайт-визитку», «сделай мне телеграм-бота», «напиши парсер» — просьба что-то разработать.
 // «Сет» — так распознаватель слышит «сайт»; объект — сразу после глагола или через одно слово («сделай мне …»)
-const CREATE = /(?:^|\s)(?:созда|сдела|напиш|разработа|сверста|запили)\S*\s+(?:\S+\s+)?(?:сайт|сет\s|лендинг|визитк|приложени|игр[уы]|бот|телеграм-?бот|скрипт|программ|парсер|утилит|расширени|плагин|функци|конвертер|генератор|виджет)/;
+const CREATE =
+  /(?:^|\s)(?:созда|сдела|напиш|разработа|сверста|запили)\S*\s+(?:\S+\s+)?(?:сайт|сет\s|лендинг|визитк|приложени|игр[уы]|бот|телеграм-?бот|скрипт|программ|парсер|утилит|расширени|плагин|функци|конвертер|генератор|виджет)/;
 
 const normalize = (s) => String(s).toLowerCase().replace(/ё/g, 'е');
 const minutes = (n) => `${n} ${plural(n, 'минуту', 'минуты', 'минут')}`;
@@ -85,7 +86,14 @@ function findProject(projects, text) {
 
 function folderName(task, now = new Date()) {
   const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}-${pad(now.getMinutes())}`;
-  const words = String(task).replace(/[^\p{L}\p{N} ]+/gu, ' ').trim().split(/\s+/).slice(0, 5).join(' ').slice(0, 40).trim();
+  const words = String(task)
+    .replace(/[^\p{L}\p{N} ]+/gu, ' ')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 5)
+    .join(' ')
+    .slice(0, 40)
+    .trim();
   return words ? `${stamp} ${words}` : stamp;
 }
 
@@ -104,7 +112,12 @@ function summaryOf(output, max = 300) {
   const paras = String(output)
     .replace(/\x60{3}[\s\S]*?\x60{3}/g, ' ') // блоки кода; \x60 — обратная кавычка (сбивала бы разбор строк в stress-phrases)
     .split(/\n\s*\n/)
-    .map((s) => s.replace(/[*_#\x60>|]+/g, '').replace(/\s+/g, ' ').trim())
+    .map((s) =>
+      s
+        .replace(/[*_#\x60>|]+/g, '')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    )
     .filter(Boolean);
   const last = paras.at(-1) || '';
   if (last.length <= max) return last;
@@ -119,7 +132,8 @@ let job = null; // { agent, task, dir, started, proc, status: running|done|faile
 
 // Обёртка npm (.cmd) запускается только через cmd.exe — у неё и дочерние процессы, поэтому гасим деревом
 function kill(proc) {
-  if (process.platform === 'win32' && proc.pid) spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true }).on('error', () => {});
+  if (process.platform === 'win32' && proc.pid)
+    spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true }).on('error', () => {});
   else proc.kill();
 }
 
@@ -248,7 +262,10 @@ async function control(arg, ctx) {
 // «Как там задача?», «отмени задачу», «открой результат» — без модели, но только когда задача была
 function quick(text) {
   if (!job) return null;
-  const t = normalize(text).replace(/[^а-яa-z ]+/g, '').replace(/\s+/g, ' ').trim();
+  const t = normalize(text)
+    .replace(/[^а-яa-z ]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   const act = (arg) => ({ addressed: true, say: '', actions: [{ tool: 'delegate_task', arg }] });
   if (/^(как там|что с|ну что) (задач\S*|агент\S*|клод\S*|кодекс\S*)$|^задача готова$/.test(t)) return act('status');
   if (/^(отмени|останови|прерви) (задачу|агента)$/.test(t)) return act('cancel');
@@ -258,10 +275,29 @@ function quick(text) {
 
 module.exports = {
   id: 'delegate',
-  title: 'передать сложную задачу агенту для программистов (Claude Code или Codex): создать сайт, программу, бота, написать код или скрипт, оптимизировать, исправить ошибку, разобраться в проекте',
+  needs: ['person'],
+  title:
+    'передать сложную задачу агенту для программистов (Claude Code или Codex): создать сайт, программу, бота, написать код или скрипт, оптимизировать, исправить ошибку, разобраться в проекте',
   keywords: [
-    'код', 'скрипт', 'оптимиз', 'рефактор', 'отлад', 'дебаг', 'баг', 'claude', 'клод', 'codex', 'кодекс', 'агент', 'делегир',
-    'визитк', 'лендинг', 'сверста', 'как там задача', 'отмени задачу', 'открой результат',
+    'код',
+    'скрипт',
+    'оптимиз',
+    'рефактор',
+    'отлад',
+    'дебаг',
+    'баг',
+    'claude',
+    'клод',
+    'codex',
+    'кодекс',
+    'агент',
+    'делегир',
+    'визитк',
+    'лендинг',
+    'сверста',
+    'как там задача',
+    'отмени задачу',
+    'открой результат',
     CREATE,
   ],
   available: (config) => !!findAgent(config),
@@ -276,12 +312,23 @@ module.exports = {
   tools: [
     {
       name: 'delegate',
+      llmArg: true,
       use: 'передать сложную задачу (код, скрипт, оптимизация, отладка) агенту — он сделает её в фоне и сообщит итог',
       arg: 'задача целиком и подробно',
       examples: [
         ['создай сайт визитку', { addressed: true, say: '', actions: [{ tool: 'delegate', arg: 'Создать сайт-визитку' }] }],
-        ['напиши скрипт на питоне, который переименует фото по дате съёмки', { addressed: true, say: '', actions: [{ tool: 'delegate', arg: 'Написать скрипт на Python, который переименовывает фотографии по дате съёмки' }] }],
-        ['оптимизируй код, который я скопировал', { addressed: true, say: '', actions: [{ tool: 'delegate', arg: 'Оптимизировать код из буфера обмена' }] }],
+        [
+          'напиши скрипт на питоне, который переименует фото по дате съёмки',
+          {
+            addressed: true,
+            say: '',
+            actions: [{ tool: 'delegate', arg: 'Написать скрипт на Python, который переименовывает фотографии по дате съёмки' }],
+          },
+        ],
+        [
+          'оптимизируй код, который я скопировал',
+          { addressed: true, say: '', actions: [{ tool: 'delegate', arg: 'Оптимизировать код из буфера обмена' }] },
+        ],
       ],
       speaks: true,
       run: delegate,
@@ -312,7 +359,11 @@ module.exports = {
     if (ctx.config.skills?.delegate?.enabled !== undefined) return;
     const agent = findAgent(ctx.config);
     if (!agent) return;
-    await askConsent(ctx, agent, `Нашёл на компьютере ${agent.title}. Передавать ему сложные задачи — написать код, оптимизировать, найти ошибку?`);
+    await askConsent(
+      ctx,
+      agent,
+      `Нашёл на компьютере ${agent.title}. Передавать ему сложные задачи — написать код, оптимизировать, найти ошибку?`,
+    );
   },
   // для тестов
   _test: {

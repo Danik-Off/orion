@@ -32,7 +32,15 @@ const FOLDER_NAMES = [
   [/музык|music/, 'music'],
   [/видео|video|фильм/, 'videos'],
 ];
-const SPOKEN_FOLDER = { downloads: 'загрузках', documents: 'документах', desktop: 'рабочем столе', screenshots: 'скриншотах', pictures: 'изображениях', music: 'музыке', videos: 'видео' };
+const SPOKEN_FOLDER = {
+  downloads: 'загрузках',
+  documents: 'документах',
+  desktop: 'рабочем столе',
+  screenshots: 'скриншотах',
+  pictures: 'изображениях',
+  music: 'музыке',
+  videos: 'видео',
+};
 
 let folders = null;
 async function userFolders() {
@@ -43,7 +51,9 @@ async function userFolders() {
     const { powershell } = require('../lib/windows');
     const out = await powershell(
       "$k = Get-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders'; " +
-        `@{ ${Object.entries(FOLDER_KEYS).map(([n, k]) => `${n} = [Environment]::ExpandEnvironmentVariables($k.'${k}')`).join('; ')} } | ConvertTo-Json -Compress`,
+        `@{ ${Object.entries(FOLDER_KEYS)
+          .map(([n, k]) => `${n} = [Environment]::ExpandEnvironmentVariables($k.'${k}')`)
+          .join('; ')} } | ConvertTo-Json -Compress`,
     ).catch(() => '{}');
     found = JSON.parse(out.trim() || '{}');
   }
@@ -72,7 +82,8 @@ function inside(f, p) {
 
 // --- типы и время ---
 
-const SAFE_TO_OPEN = /\.(pdf|docx?|xlsx?|pptx?|odt|ods|odp|rtf|txt|md|csv|jpe?g|png|gif|webp|bmp|heic|svg|mp3|flac|wav|ogg|m4a|aac|mp4|mkv|avi|mov|webm|epub|fb2|djvu)$/i;
+const SAFE_TO_OPEN =
+  /\.(pdf|docx?|xlsx?|pptx?|odt|ods|odp|rtf|txt|md|csv|jpe?g|png|gif|webp|bmp|heic|svg|mp3|flac|wav|ogg|m4a|aac|mp4|mkv|avi|mov|webm|epub|fb2|djvu)$/i;
 const TYPES = [
   [/pdf|пдф/, /\.pdf$/i, 'PDF'],
   [/фото|снимк|картин|изображ|скрин|photo|image/, /\.(jpe?g|png|gif|webp|bmp|heic)$/i, 'изображение'],
@@ -173,7 +184,10 @@ function search(f, query, { dirs = null, limit = 5 } = {}) {
   const type = TYPES.find(([re]) => re.test(query));
   const when = since(query);
   const name = query
-    .replace(/(?<!\p{L})(последн\p{L}*|недавн\p{L}*|новы\p{L}*|свеж\p{L}*|сегодняшн\p{L}*|вчерашн\p{L}*|за|на|в|этой|этот|прошл\p{L}*|сегодня|вчера|недел\p{L}*|месяц\p{L}*|файл\p{L}*|все|мои|мой|моя)(?!\p{L})/gu, ' ')
+    .replace(
+      /(?<!\p{L})(последн\p{L}*|недавн\p{L}*|новы\p{L}*|свеж\p{L}*|сегодняшн\p{L}*|вчерашн\p{L}*|за|на|в|этой|этот|прошл\p{L}*|сегодня|вчера|недел\p{L}*|месяц\p{L}*|файл\p{L}*|все|мои|мой|моя)(?!\p{L})/gu,
+      ' ',
+    )
     .replace(type ? new RegExp(`(?<!\\p{L})\\p{L}*(?:${type[0].source})\\p{L}*`, 'gu') : /$^/, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -217,7 +231,13 @@ async function resolveFolder(ref) {
 // --- ответы ---
 
 const human = (bytes) =>
-  bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1).replace('.', ',')} ГБ` : bytes >= 1e6 ? `${Math.round(bytes / 1e6)} МБ` : bytes >= 1e3 ? `${Math.round(bytes / 1e3)} КБ` : `${bytes} байт`;
+  bytes >= 1e9
+    ? `${(bytes / 1e9).toFixed(1).replace('.', ',')} ГБ`
+    : bytes >= 1e6
+      ? `${Math.round(bytes / 1e6)} МБ`
+      : bytes >= 1e3
+        ? `${Math.round(bytes / 1e3)} КБ`
+        : `${bytes} байт`;
 const shortName = (file) => path.basename(file).replace(/\.[^.]+$/, '');
 function ago(ms) {
   const d = Date.now() - ms;
@@ -236,7 +256,13 @@ async function reveal(file, ctx, open) {
     if (!err) return { ok: true, speak: `Открываю «${shortName(file)}».` };
   }
   ctx.showItemInFolder(file);
-  return { ok: true, speak: open && !SAFE_TO_OPEN.test(name) ? `«${name}» — это программа или скрипт, сам не запускаю. Показываю в папке.` : `Нашёл «${shortName(file)}», показываю в папке.` };
+  return {
+    ok: true,
+    speak:
+      open && !SAFE_TO_OPEN.test(name)
+        ? `«${name}» — это программа или скрипт, сам не запускаю. Показываю в папке.`
+        : `Нашёл «${shortName(file)}», показываю в папке.`,
+  };
 }
 
 // --- инструменты ---
@@ -262,14 +288,17 @@ async function findFile(query, ctx) {
   if (!hits.length) return { ok: false, message: `Не нашёл «${q}», сэр.` };
   const result = await reveal(hits[0].file, ctx, open);
   if (hits.length > 1 && !open) {
-    const others = hits.slice(1, 3).map((h) => `«${shortName(h.file)}»`).join(' и ');
+    const others = hits
+      .slice(1, 3)
+      .map((h) => `«${shortName(h.file)}»`)
+      .join(' и ');
     result.speak += ` Есть ещё ${others}.`;
   }
   return result;
 }
 
 // «что я недавно скачал», «какие файлы на рабочем столе», «фото за сегодня» → до пяти названий
-async function recentFiles(arg, ctx) {
+async function recentFiles(arg) {
   const f = await userFolders();
   const t = cleanQuery(arg);
   const key = FOLDER_NAMES.find(([re]) => re.test(t))?.[1];
@@ -288,7 +317,7 @@ async function recentFiles(arg, ctx) {
 }
 
 // «сколько места занимают загрузки», «сколько файлов на рабочем столе»
-async function folderInfo(arg, ctx) {
+async function folderInfo(arg) {
   const r = await resolveFolder(arg || 'загрузки');
   if (r.error) return { ok: false, message: r.error };
   let count = 0;
@@ -327,7 +356,10 @@ async function readFile(arg, ctx) {
   const name = shortName(r.file);
   if (error) return { ok: false, message: `«${name}»: ${error}, сэр.` };
   if (!mode || /^(read|прочит)/i.test(mode)) {
-    const cut = text.length > 700 ? `${text.slice(0, 700).replace(/\s+\S*$/, '')}… Дальше ещё около ${Math.round((text.length - 700) / 1000) || 1} тыс. знаков.` : text;
+    const cut =
+      text.length > 700
+        ? `${text.slice(0, 700).replace(/\s+\S*$/, '')}… Дальше ещё около ${Math.round((text.length - 700) / 1000) || 1} тыс. знаков.`
+        : text;
     return { ok: true, speak: `«${name}»: ${cut}` };
   }
   const data = text.slice(0, MAX_CONTEXT);
@@ -349,7 +381,12 @@ async function readFile(arg, ctx) {
 
 // Безопасное имя: без путей и запрещённых знаков; расширение старого файла сохраняется
 function safeName(raw, keepExt = '') {
-  let n = String(raw || '').replace(/["«»“”]/g, '').replace(/[\\/:*?<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+  let n = String(raw || '')
+    .replace(/["«»“”]/g, '')
+    .replace(/[\\/:*?<>|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
   n = n.replace(/^\.+/, '');
   if (!n) return null;
   if (keepExt && !path.extname(n)) n += keepExt;
@@ -384,7 +421,10 @@ async function fileOp(arg, ctx) {
     else fs.writeFileSync(target, c ? `${c}\n` : '', 'utf8');
     remember(target);
     ctx.audit?.({ file: op, target });
-    return { ok: true, speak: `${op === 'mkdir' ? 'Папка' : 'Файл'} «${path.basename(target)}» создан${op === 'mkdir' ? 'а' : ''} на ${where.title === 'рабочем столе' ? 'рабочем столе' : `в ${where.title}`}.` };
+    return {
+      ok: true,
+      speak: `${op === 'mkdir' ? 'Папка' : 'Файл'} «${path.basename(target)}» создан${op === 'mkdir' ? 'а' : ''} на ${where.title === 'рабочем столе' ? 'рабочем столе' : `в ${where.title}`}.`,
+    };
   }
 
   const r = await resolveFile(a);
@@ -438,9 +478,16 @@ async function fileOp(arg, ctx) {
 
 // Частые обороты — без модели: она путает «что я скачивал» с «последним скачанным» и «файл заметки» — со списком заметок
 function quick(text) {
-  const t = String(text).toLowerCase().replace(/ё/g, 'е').replace(/[^а-яa-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const t = String(text)
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[^а-яa-z0-9 ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   const plan = (tool, arg) => ({ addressed: true, say: '', actions: [{ tool, arg }] });
-  const got = t.match(/^(?:что|какие файлы) я (сегодня |вчера |недавно |на этой неделе |за неделю )?(?:скачал|скачивал|загрузил|загружал)$/);
+  const got = t.match(
+    /^(?:что|какие файлы) я (сегодня |вчера |недавно |на этой неделе |за неделю )?(?:скачал|скачивал|загрузил|загружал)$/,
+  );
   if (got) return plan('recent_files', `загрузки ${got[1] || ''}`.trim());
   const read = t.match(/^(прочитай|прочти|зачитай|перескажи|кратко перескажи) (?:файл|документ) (.+)$/);
   if (read) return plan('read_file', /перескаж/.test(read[1]) ? `${read[2]}|summary` : read[2]);
@@ -453,19 +500,51 @@ function quick(text) {
 function fileOpArg(arg, text) {
   const t = String(text).toLowerCase().replace(/ё/g, 'е');
   const mk = String(arg).match(/^\s*mkdir\s+(.*)$/i);
-  if (mk && !/папк/.test(t) && /(?<!\p{L})(текст\p{L}*|документ\p{L}*|файл\p{L}*|блокнот\p{L}*)(?!\p{L})/u.test(t)) return `newfile ${mk[1]}`;
+  if (mk && !/папк/.test(t) && /(?<!\p{L})(текст\p{L}*|документ\p{L}*|файл\p{L}*|блокнот\p{L}*)(?!\p{L})/u.test(t))
+    return `newfile ${mk[1]}`;
   const m = String(arg).match(/^(\w+)\s+(это|его|её|ее|этот)\s*(\|.*)?$/i);
   if (!m) return arg;
   if (/(?<!\p{L})(его|ее|этот|эту|это|него|нее|этого)(?!\p{L})/u.test(t)) return arg;
-  const obj = t.match(/(?:скопируй|скопировать|перемести|переместить|переложи|переименуй|переименовать|удали|удалить)\s+(?:файл\s+|документ\s+)?(.+?)(?:\s+(?:в|на|во|к)\s+.+)?[.!?]*$/u)?.[1];
+  const obj = t.match(
+    /(?:скопируй|скопировать|перемести|переместить|переложи|переименуй|переименовать|удали|удалить)\s+(?:файл\s+|документ\s+)?(.+?)(?:\s+(?:в|на|во|к)\s+.+)?[.!?]*$/u,
+  )?.[1];
   return obj ? `${m[1]} ${obj}${m[3] || ''}` : arg;
 }
 
 module.exports = {
   id: 'files',
+  needs: ['now'],
   quick,
-  title: 'файлы и папки: открыть папку, найти файл, что недавно скачано, сколько места, прочитать или пересказать документ, переименовать, переместить, удалить, создать',
-  keywords: ['папк', 'загрузк', 'скача', 'скачив', 'документ', 'рабочий стол', 'рабочем столе', 'файл', 'проводник', 'скриншот', 'переимен', 'перемест', 'скопируй', 'удали', 'прочитай файл', 'договор', 'pdf', 'пдф', 'места занима', 'фото', 'фотк', 'снимк', 'картинк', 'презентац', 'таблиц', 'архив'],
+  title:
+    'файлы и папки: открыть папку, найти файл, что недавно скачано, сколько места, прочитать или пересказать документ, переименовать, переместить, удалить, создать',
+  keywords: [
+    'папк',
+    'загрузк',
+    'скача',
+    'скачив',
+    'документ',
+    'рабочий стол',
+    'рабочем столе',
+    'файл',
+    'проводник',
+    'скриншот',
+    'переимен',
+    'перемест',
+    'скопируй',
+    'удали',
+    'прочитай файл',
+    'договор',
+    'pdf',
+    'пдф',
+    'места занима',
+    'фото',
+    'фотк',
+    'снимк',
+    'картинк',
+    'презентац',
+    'таблиц',
+    'архив',
+  ],
   rules: [
     '«Последний скачанный файл» (один) — latest_download; «что я скачивал», «что сегодня скачал», «какие файлы на рабочем столе», «фото за сегодня» — recent_files (это файлы на компьютере, не поиск в интернете).',
     '«Прочитай / перескажи файл, документ» — read_file: это файлы на компьютере, а не заметки и списки.',
@@ -490,6 +569,7 @@ module.exports = {
     },
     {
       name: 'find_file',
+      llmArg: true,
       use: 'найти файл на компьютере: по названию, типу (pdf, фото, видео, таблица, архив), дате (сегодня, вчера, на неделе)',
       arg: 'что искать; "open …" — ещё и открыть',
       examples: [
@@ -500,6 +580,7 @@ module.exports = {
     },
     {
       name: 'recent_files',
+      llmArg: true,
       use: 'что недавно появилось: скачано, сохранено, какие файлы на рабочем столе, фото за сегодня',
       arg: 'папка и/или тип, время; пусто — загрузки, рабочий стол и документы',
       examples: [
@@ -517,26 +598,43 @@ module.exports = {
     },
     {
       name: 'read_file',
+      llmArg: true,
       use: 'прочитать документ вслух, пересказать его или ответить на вопрос по нему (txt, Word, таблицы, презентации, книги; не PDF)',
       arg: '"файл" — прочитать; "файл|summary" — пересказать; "файл|вопрос" — ответить по документу',
       examples: [
-        ['перескажи последний скачанный документ', { addressed: true, say: 'Сейчас прочитаю.', actions: [{ tool: 'read_file', arg: 'последний скачанный|summary' }] }],
-        ['что написано в договоре про сроки оплаты', { addressed: true, say: '', actions: [{ tool: 'read_file', arg: 'договор|какие сроки оплаты' }] }],
+        [
+          'перескажи последний скачанный документ',
+          { addressed: true, say: 'Сейчас прочитаю.', actions: [{ tool: 'read_file', arg: 'последний скачанный|summary' }] },
+        ],
+        [
+          'что написано в договоре про сроки оплаты',
+          { addressed: true, say: '', actions: [{ tool: 'read_file', arg: 'договор|какие сроки оплаты' }] },
+        ],
       ],
       filler: 'Сейчас прочитаю.',
       run: readFile,
     },
     {
       name: 'file_op',
+      llmArg: true,
       use: 'действие с файлом: переименовать, переместить, скопировать, удалить в корзину, создать папку или текстовый файл, скопировать путь',
       arg: '"rename файл|новое имя", "move файл|папка", "copy файл|папка", "delete файл", "mkdir имя|где", "newfile имя|где|текст", "path файл"; «его/этот файл» → «это»',
       normalize: fileOpArg,
       examples: [
         ['переименуй его в договор', { addressed: true, say: '', actions: [{ tool: 'file_op', arg: 'rename это|договор' }] }],
-        ['перемести последний скачанный файл на рабочий стол', { addressed: true, say: '', actions: [{ tool: 'file_op', arg: 'move последний скачанный|рабочий стол' }] }],
+        [
+          'перемести последний скачанный файл на рабочий стол',
+          { addressed: true, say: '', actions: [{ tool: 'file_op', arg: 'move последний скачанный|рабочий стол' }] },
+        ],
         ['скопируй презентацию в загрузки', { addressed: true, say: '', actions: [{ tool: 'file_op', arg: 'copy презентация|загрузки' }] }],
-        ['создай на рабочем столе папку отпуск', { addressed: true, say: '', actions: [{ tool: 'file_op', arg: 'mkdir отпуск|рабочий стол' }] }],
-        ['создай на рабочем столе текстовый документ', { addressed: true, say: '', actions: [{ tool: 'file_op', arg: 'newfile |рабочий стол' }] }],
+        [
+          'создай на рабочем столе папку отпуск',
+          { addressed: true, say: '', actions: [{ tool: 'file_op', arg: 'mkdir отпуск|рабочий стол' }] },
+        ],
+        [
+          'создай на рабочем столе текстовый документ',
+          { addressed: true, say: '', actions: [{ tool: 'file_op', arg: 'newfile |рабочий стол' }] },
+        ],
         ['удали этот файл', { addressed: true, say: '', actions: [{ tool: 'file_op', arg: 'delete это' }] }],
       ],
       run: fileOp,
@@ -544,5 +642,13 @@ module.exports = {
   ],
   userFolders, // папки пользователя — и для других навыков (задачи агента кладутся в «Документы»)
   // для тестов
-  _test: { safeName, freePath, inside, search, since, setFolders: (f) => (folders = f), reset: () => ((folders = null), (lastFile = null)) },
+  _test: {
+    safeName,
+    freePath,
+    inside,
+    search,
+    since,
+    setFolders: (f) => (folders = f),
+    reset: () => ((folders = null), (lastFile = null)),
+  },
 };

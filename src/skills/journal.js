@@ -47,9 +47,14 @@ function report(entries, day) {
   const reminders = sameDay.filter((e) => e.reminder).length;
   const first = new Date(inputs[0].t);
   const n = inputs.length;
-  const parts = [`${n} ${plural(n, 'команда', 'команды', 'команд')}, первая в ${first.getHours()}:${String(first.getMinutes()).padStart(2, '0')}.`];
+  const parts = [
+    `${n} ${plural(n, 'команда', 'команды', 'команд')}, первая в ${first.getHours()}:${String(first.getMinutes()).padStart(2, '0')}.`,
+  ];
   if (apps.length) parts.push(`Чаще всего открывали: ${top(apps).join(', ')}.`);
-  if (videos.length) parts.push(`Включали ${videos.length} ${plural(videos.length, 'ролик', 'ролика', 'роликов')}, например «${videos[videos.length - 1]}».`);
+  if (videos.length)
+    parts.push(
+      `Включали ${videos.length} ${plural(videos.length, 'ролик', 'ролика', 'роликов')}, например «${videos[videos.length - 1]}».`,
+    );
   if (reminders) parts.push(`Сработало напоминаний: ${reminders}.`);
   const skills = top(tools.map((e) => e.skill).filter(Boolean));
   if (skills.length) parts.push(`Больше всего пригодились навыки: ${skills.join(', ')}.`);
@@ -58,13 +63,20 @@ function report(entries, day) {
 
 // «что я сегодня делал», «итоги дня», «что я делал вчера» — без модели
 function quick(text) {
-  const t = text.toLowerCase().replace(/ё/g, 'е').replace(/[^а-я ]+/g, '').trim();
-  const m = t.match(/^(?:что я (?:сегодня |вчера )?делал(?:а)?(?: сегодня| вчера)?|итоги (?:дня|сегодня)|отчет (?:за|о) (?:день|сегодня|вчера)(?: день)?)$/);
+  const t = text
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[^а-я ]+/g, '')
+    .trim();
+  const m = t.match(
+    /^(?:что я (?:сегодня |вчера )?делал(?:а)?(?: сегодня| вчера)?|итоги (?:дня|сегодня)|отчет (?:за|о) (?:день|сегодня|вчера)(?: день)?)$/,
+  );
   return m ? { addressed: true, say: '', actions: [{ tool: 'day_report', arg: /вчера/.test(t) ? 'вчера' : '' }] } : null;
 }
 
 module.exports = {
   id: 'journal',
+  needs: ['now'],
   quick,
   title: 'отчёт о дне: сколько было команд, что открывали, что слушали',
   keywords: ['что я сегодня делал', 'что я делал', 'отчет', 'отчёт', 'статистик', 'итоги дня', 'журнал'],

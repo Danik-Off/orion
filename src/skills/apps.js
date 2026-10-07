@@ -15,10 +15,20 @@ const BUILTIN = {
   'панель управления': 'control.exe',
 };
 // Процесс браузера по умолчанию → его название в меню «Пуск»
-const BROWSER_APPS = { chrome: 'Google Chrome', msedge: 'Microsoft Edge', firefox: 'Firefox', browser: 'Yandex', opera: 'Opera', brave: 'Brave', vivaldi: 'Vivaldi' };
+const BROWSER_APPS = {
+  chrome: 'Google Chrome',
+  msedge: 'Microsoft Edge',
+  firefox: 'Firefox',
+  browser: 'Yandex',
+  opera: 'Opera',
+  brave: 'Brave',
+  vivaldi: 'Vivaldi',
+};
 
 async function findApp(name) {
-  const q = String(name || '').toLowerCase().trim();
+  const q = String(name || '')
+    .toLowerCase()
+    .trim();
   if (BUILTIN[q]) return { name: q, target: BUILTIN[q] };
   if (/^(браузер|browser|интернет)$/.test(q)) {
     const proc = await defaultBrowserProcess();
@@ -62,9 +72,26 @@ async function closeApp(query, ctx) {
 
 module.exports = {
   id: 'apps',
+  needs: [],
   platforms: ['win32'], // PowerShell и программы Windows
   title: 'открыть или закрыть любую программу, свернуть все окна',
-  keywords: ['откр', 'запус', 'закр', 'выруб', 'заверш', 'сверн', 'программ', 'прилож', 'окн', 'рабочий стол', 'телеграм', 'дискорд', 'стим', 'браузер', 'хром'],
+  keywords: [
+    'откр',
+    'запус',
+    'закр',
+    'выруб',
+    'заверш',
+    'сверн',
+    'программ',
+    'прилож',
+    'окн',
+    'рабочий стол',
+    'телеграм',
+    'дискорд',
+    'стим',
+    'браузер',
+    'хром',
+  ],
   init: (ctx) => {
     catalog = createAppCatalog({ aliases: ctx.config.apps, discover: ctx.config.discoverApps !== false });
   },
@@ -74,7 +101,9 @@ module.exports = {
       name: 'open_app',
       use: 'открыть или запустить программу (любая установленная: Telegram, Steam, Word, Discord…)',
       arg: 'название программы, как его назвал пользователь',
-      examples: [['открой телеграм', { addressed: true, say: 'Открываю Telegram, сэр.', actions: [{ tool: 'open_app', arg: 'телеграм' }] }]],
+      examples: [
+        ['открой телеграм', { addressed: true, say: 'Открываю Telegram, сэр.', actions: [{ tool: 'open_app', arg: 'телеграм' }] }],
+      ],
       run: async (name, ctx) => {
         const found = name && (await findApp(name));
         if (!found) return { ok: false, message: `Не нашёл программу «${name}» в меню «Пуск», сэр.` };

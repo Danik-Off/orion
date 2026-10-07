@@ -23,9 +23,11 @@ const strip = (html) =>
 
 // Первое предложение статьи без скобок с датами и произношением: «Pulp — британская группа, основанная в 1978 году.»
 const firstSentence = (text) =>
-  (String(text)
-    .replace(/\s*\([^()]*\)/g, '')
-    .match(/^.{20,300}?[.!?](?=\s+[А-ЯЁA-Z«]|$)/s)?.[0] || '').trim();
+  (
+    String(text)
+      .replace(/\s*\([^()]*\)/g, '')
+      .match(/^.{20,300}?[.!?](?=\s+[А-ЯЁA-Z«]|$)/s)?.[0] || ''
+  ).trim();
 
 const told = new Set(); // уже рассказанное — чтобы не повторяться (как с «тремя сердцами осьминога»)
 const pickNew = (list, key) => {
@@ -41,7 +43,10 @@ async function didYouKnow() {
     `https://ru.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent('Шаблон:Знаете ли вы')}&prop=text&format=json&formatversion=2`,
   );
   const items = [...String(r.parse?.text || '').matchAll(/<li>([\s\S]*?)<\/li>/g)]
-    .map((m) => ({ text: strip(m[1]), title: m[1].match(/<b>\s*<a [^>]*title="([^"]+)"/)?.[1] || m[1].match(/<a [^>]*title="([^"]+)"/)?.[1] }))
+    .map((m) => ({
+      text: strip(m[1]),
+      title: m[1].match(/<b>\s*<a [^>]*title="([^"]+)"/)?.[1] || m[1].match(/<a [^>]*title="([^"]+)"/)?.[1],
+    }))
     // служебные пункты шаблона («не вносите правок…») — не факты
     .filter((i) => i.title && i.text.length > 25 && !/шаблон|правк|консенсус|обсуждени|просмотр/i.test(i.text));
   return pickNew(items, (i) => i.text);
@@ -58,7 +63,9 @@ async function onThisDay(now = new Date()) {
 async function fact(arg, ctx, request = {}) {
   const a = String(arg).trim().toLowerCase();
   // «Расскажи про эту группу / о чём эта песня» — это про то, что играет, а не случайный факт
-  const aboutNow = String(request.text || '').toLowerCase().match(/(?:эт[аоуий]\S*|играющ\S*)\s+(песн|трек|групп|исполнител|артист)/);
+  const aboutNow = String(request.text || '')
+    .toLowerCase()
+    .match(/(?:эт[аоуий]\S*|играющ\S*)\s+(песн|трек|групп|исполнител|артист)/);
   if (aboutNow || /^(песня|трек|группа|исполнитель)$/.test(a)) {
     return aboutPlaying(/песн|трек/.test(aboutNow?.[1] || a) ? 'песня' : 'исполнитель', ctx);
   }
@@ -76,7 +83,9 @@ async function fact(arg, ctx, request = {}) {
   const item = await didYouKnow().catch(() => null);
   if (!item) {
     const e = await onThisDay().catch(() => null); // запасной источник
-    return e ? { ok: true, speak: `В этот день в ${e.year} году ${e.text.replace(/\.$/, '')}.` } : { ok: false, message: 'Википедия сейчас не отвечает, сэр.' };
+    return e
+      ? { ok: true, speak: `В этот день в ${e.year} году ${e.text.replace(/\.$/, '')}.` }
+      : { ok: false, message: 'Википедия сейчас не отвечает, сэр.' };
   }
   // Анонс — дословно (пересказ моделью искажал смысл), пояснение — первое предложение статьи
   const w = await wiki(item.title).catch(() => null);
@@ -109,7 +118,10 @@ async function aboutPlaying(arg, ctx) {
   let context = relevant ? `Статья «${w.title}»:\n${w.text}` : null;
   let sources = relevant ? [{ title: w.title, url: w.url, snippet: '' }] : undefined;
   if (!context) {
-    const { results, pages } = await research(aboutSong ? `${subject} песня` : `${artist} группа`).catch(() => ({ results: [], pages: [] }));
+    const { results, pages } = await research(aboutSong ? `${subject} песня` : `${artist} группа`).catch(() => ({
+      results: [],
+      pages: [],
+    }));
     context = pages.length ? pages.map((p, i) => `[${i + 1}] ${p.title}\n${p.text}`).join('\n\n') : null;
     sources = results.length ? results : undefined;
   }
@@ -119,8 +131,25 @@ async function aboutPlaying(arg, ctx) {
 
 module.exports = {
   id: 'facts',
+  needs: ['now'],
   title: 'интересные факты из Википедии, что было в этот день в истории, рассказ про песню или группу, которая сейчас играет',
-  keywords: ['интересн', 'факт', 'знаете ли', 'в этот день', 'википеди', 'эту песню', 'эта песня', 'этой песне', 'эту группу', 'этой группе', 'этого исполнителя', 'кто поет', 'кто исполняет', 'что за песня', 'что за группа'],
+  keywords: [
+    'интересн',
+    'факт',
+    'знаете ли',
+    'в этот день',
+    'википеди',
+    'эту песню',
+    'эта песня',
+    'этой песне',
+    'эту группу',
+    'этой группе',
+    'этого исполнителя',
+    'кто поет',
+    'кто исполняет',
+    'что за песня',
+    'что за группа',
+  ],
   rules: [
     '«Расскажи что-нибудь интересное», «какой-нибудь факт» — fact: факты не выдумывай, бери из Википедии.',
     '«Расскажи про эту песню / группу / исполнителя» (то, что сейчас играет) — about_playing, а не ответ по памяти.',
@@ -145,7 +174,9 @@ module.exports = {
       arg: '"исполнитель" или "песня"',
       argEnum: ['исполнитель', 'песня'],
       filler: 'Сейчас узнаю.',
-      examples: [['что это за группа играет', { addressed: true, say: 'Сейчас узнаю.', actions: [{ tool: 'about_playing', arg: 'исполнитель' }] }]],
+      examples: [
+        ['что это за группа играет', { addressed: true, say: 'Сейчас узнаю.', actions: [{ tool: 'about_playing', arg: 'исполнитель' }] }],
+      ],
       run: aboutPlaying,
     },
   ],

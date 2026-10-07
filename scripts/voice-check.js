@@ -24,14 +24,20 @@ const own = args.filter((a) => !a.startsWith('--'));
 const phrases = own.length ? own : JSON.parse(fs.readFileSync(path.join(root, 'test/fixtures/voice-check.json'), 'utf8'));
 
 function pick(dir, re) {
-  const found = fs.readdirSync(dir).filter((n) => re.test(n)).sort((a, b) => a.length - b.length);
+  const found = fs
+    .readdirSync(dir)
+    .filter((n) => re.test(n))
+    .sort((a, b) => a.length - b.length);
   if (!found.length) throw new Error(`В ${dir} нет ${re}`);
   return path.join(dir, found[0]);
 }
 
 const ttsDir = path.join(modelsDir, s.ttsModel);
 const fp32 = path.join(modelsDir, 'supertonic-3-fp32');
-const part = (name) => (s.ttsPrecision === 'full' && fs.existsSync(path.join(fp32, `${name}.onnx`)) ? path.join(fp32, `${name}.onnx`) : pick(ttsDir, new RegExp(`^${name}.*\\.onnx$`)));
+const part = (name) =>
+  s.ttsPrecision === 'full' && fs.existsSync(path.join(fp32, `${name}.onnx`))
+    ? path.join(fp32, `${name}.onnx`)
+    : pick(ttsDir, new RegExp(`^${name}.*\\.onnx$`));
 const tts = new sherpa.OfflineTts({
   model: {
     supertonic: {
@@ -52,14 +58,24 @@ const asrDir = path.join(modelsDir, s.asrSecondPass);
 const asr = new sherpa.OfflineRecognizer({
   featConfig: { sampleRate: 16000, featureDim: 80 },
   modelConfig: {
-    transducer: { encoder: pick(asrDir, /^encoder.*\.onnx$/), decoder: pick(asrDir, /^decoder.*\.onnx$/), joiner: pick(asrDir, /^joiner.*\.onnx$/) },
+    transducer: {
+      encoder: pick(asrDir, /^encoder.*\.onnx$/),
+      decoder: pick(asrDir, /^decoder.*\.onnx$/),
+      joiner: pick(asrDir, /^joiner.*\.onnx$/),
+    },
     tokens: path.join(asrDir, 'tokens.txt'),
     numThreads: 2,
     provider: 'cpu',
   },
 });
 
-const words = (t) => t.toLowerCase().replace(/ё/g, 'е').replace(/[́+]/g, '').split(/[^a-zа-я0-9]+/).filter(Boolean);
+const words = (t) =>
+  t
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[́+]/g, '')
+    .split(/[^a-zа-я0-9]+/)
+    .filter(Boolean);
 if (save) fs.mkdirSync(path.join(root, 'voice-check'), { recursive: true });
 
 let missed = 0;
@@ -70,7 +86,12 @@ phrases.forEach((raw, i) => {
   const text = stress ? forSynth(spoken) : spoken.replace(/\+/g, '');
   const audio = tts.generate({
     text,
-    generationConfig: new sherpa.GenerationConfig({ sid: s.ttsSpeaker ?? 0, speed: s.ttsSpeed || 1, numSteps: s.ttsSteps ?? 12, extra: { lang: 'ru' } }),
+    generationConfig: new sherpa.GenerationConfig({
+      sid: s.ttsSpeaker ?? 0,
+      speed: s.ttsSpeed || 1,
+      numSteps: s.ttsSteps ?? 12,
+      extra: { lang: 'ru' },
+    }),
   });
   if (save) sherpa.writeWave(path.join(root, 'voice-check', `${String(i + 1).padStart(2, '0')}.wav`), audio);
   const stream = asr.createStream();
@@ -81,7 +102,19 @@ phrases.forEach((raw, i) => {
   missed += lost.length;
   total += words(spoken).length;
   for (const w of lost) counts.set(w, (counts.get(w) || 0) + 1);
-  console.log(`${lost.length ? '✗' : '✓'} ${text}${lost.length ? `\n    не расслышано: ${lost.join(', ')} | услышано: ${heard.join(' ')}` : ''}`);
+  console.log(
+    `${lost.length ? '✗' : '✓'} ${text}${lost.length ? `\n    не расслышано: ${lost.join(', ')} | услышано: ${heard.join(' ')}` : ''}`,
+  );
 });
-console.log(`\n${stress ? 'С ударениями' : 'Без ударений'}: не расслышано ${missed} слов из ${total} (${((100 * missed) / total).toFixed(1)}%)`);
-if (counts.size) console.log('Чаще всего:', [...counts].sort((a, b) => b[1] - a[1]).slice(0, 15).map(([w, n]) => `${w}×${n}`).join(', '));
+console.log(
+  `\n${stress ? 'С ударениями' : 'Без ударений'}: не расслышано ${missed} слов из ${total} (${((100 * missed) / total).toFixed(1)}%)`,
+);
+if (counts.size)
+  console.log(
+    'Чаще всего:',
+    [...counts]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 15)
+      .map(([w, n]) => `${w}×${n}`)
+      .join(', '),
+  );

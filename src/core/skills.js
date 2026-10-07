@@ -27,7 +27,11 @@
 //        message — пояснение, если не получилось или нужно что-то сказать сверх плана
 //     speaks: true — run всегда возвращает speak или message: реплику модели можно не дописывать
 //     filler    — короткая фраза («Сейчас поищу.»): ядро скажет её сразу, пока медленный инструмент работает
+//     llmArg: true — аргумент надо вычислить или переформулировать (время, дата, факт о человеке): маленькая
+//               модель вызова функций только называет инструмент, аргумент пишет большая по узкому промпту
 //   rules     — дополнительные строки правил для промпта (подгружаются вместе с навыком)
+//   needs     — какие данные нужны узкому промпту навыка: 'now' (дата и время), 'person' (имя и обращение),
+//               'city' (где находится ассистент), 'facts' (что известно о собеседнике и общее); по умолчанию ['now']
 //   quick(text, ctx) → план или null — разбор частых фраз без модели (мгновенно)
 //   init(ctx) — подготовка при старте; может дополнить описание своих инструментов
 //   offer(ctx) — предложить что-то при запуске, когда всё установлено (вопрос через ctx.confirm):
@@ -46,13 +50,17 @@ const MAX_SELECTED = 4; // навыков с полным описанием в 
 const CHAT_TOPIC = 'chat'; // тема «просто разговор» — без навыков
 
 const normalize = (text) => String(text).toLowerCase().replace(/ё/g, 'е');
-const wordsOf = (text) => normalize(text).split(/[^a-zа-я0-9]+/).filter(Boolean);
+const wordsOf = (text) =>
+  normalize(text)
+    .split(/[^a-zа-я0-9]+/)
+    .filter(Boolean);
 
 // Насколько фраза похожа на тему навыка: каждое совпавшее ключевое слово — балл
 function keywordScore(skill, text, words) {
   let score = 0;
   for (const k of skill.keywords || []) {
-    if (typeof k === 'function') score += k(text) ? 2 : 0; // своя проверка навыка (например, названия установленных игр)
+    if (typeof k === 'function')
+      score += k(text) ? 2 : 0; // своя проверка навыка (например, названия установленных игр)
     else if (k instanceof RegExp) score += k.test(text) ? 2 : 0;
     else if (k.includes(' ')) score += text.includes(k) ? 2 : 0;
     else score += words.some((w) => w.startsWith(k)) ? 1 : 0;
@@ -75,12 +83,32 @@ function createSkillRegistry(skills, { config, ctx, audit, platform = process.pl
   );
   const byId = new Map(enabled.map((s) => [s.id, s]));
   const tools = new Map(); // имя → { tool, skill }; храним ссылку, чтобы видеть правки из init()
-  for (const skill of enabled) {
+  function register(skill) {
     if (skill.id === CHAT_TOPIC) throw new Error(`Имя навыка ${CHAT_TOPIC} занято`);
     for (const tool of skill.tools || []) {
       if (tools.has(tool.name)) throw new Error(`Инструмент ${tool.name} объявлен дважды`);
       tools.set(tool.name, { tool, skill: skill.id });
     }
+  }
+  enabled.forEach(register);
+
+  // Навыки, появившиеся после запуска (инструменты MCP-серверов подключаются асинхронно). Выключенные
+  // в настройках не добавляются; навык с занятым id или именем инструмента пропускается — с записью в журнал
+  function add(list) {
+    const added = [];
+    for (const skill of list) {
+      if (config.skills?.[skill.id]?.enabled === false || byId.has(skill.id)) continue;
+      try {
+        register(skill);
+      } catch (err) {
+        audit({ skill: skill.id, error: String(err.message) });
+        continue;
+      }
+      enabled.push(skill);
+      byId.set(skill.id, skill);
+      added.push(skill.id);
+    }
+    return added;
   }
   const skillsOf = (ids) => (ids ? ids.map((id) => byId.get(id)).filter(Boolean) : enabled);
   const toolsOf = (ids) => skillsOf(ids).flatMap((s) => s.tools || []);
@@ -89,14 +117,22 @@ function createSkillRegistry(skills, { config, ctx, audit, platform = process.pl
 
   // Каталог: по строке на навык. Постоянная часть промпта — движок её кэширует.
   const catalogPrompt = () => enabled.map((s) => `- ${s.id}: ${s.title || s.tools?.map((t) => t.use).join('; ')}`).join('\n');
+  // Каталог инструментов для диспетчера: строка на инструмент — что он делает, без формата аргумента (его пишет
+  // узкий промпт инструмента на втором шаге). Постоянная часть промпта — движок её кэширует
+  const toolCatalogPrompt = () => enabled.flatMap((s) => (s.tools || []).map((t) => `- ${t.name} (${s.id}): ${t.use}`)).join('\n');
   const toolsPrompt = (ids) =>
     toolsOf(ids)
       .map((t) => `- ${t.name} — ${t.use}. arg: ${t.argEnum ? t.argEnum.map((v) => JSON.stringify(v)).join(' | ') : t.arg}`)
       .join('\n');
-  const rulesPrompt = (ids) => skillsOf(ids).flatMap((s) => s.rules || []).join('\n');
+  const rulesPrompt = (ids) =>
+    skillsOf(ids)
+      .flatMap((s) => s.rules || [])
+      .join('\n');
   const examplesPrompt = (ids) =>
     skillsOf(ids)
-      .flatMap((s) => (s.tools || []).flatMap((t) => (t.examples || []).map(([phrase, plan]) => `"${phrase}" → ${s.id}: ${compactPlan(plan)}`)))
+      .flatMap((s) =>
+        (s.tools || []).flatMap((t) => (t.examples || []).map(([phrase, plan]) => `"${phrase}" → ${s.id}: ${compactPlan(plan)}`)),
+      )
       .join('\n');
   // Полное описание выбранных навыков — для меняющейся части промпта
   const detailsPrompt = (ids) =>
@@ -117,6 +153,20 @@ function createSkillRegistry(skills, { config, ctx, audit, platform = process.pl
     if (!variants.length) return variant({ type: 'string', enum: ['none'] }, { type: 'string' });
     return variants.length === 1 ? variants[0] : { anyOf: variants };
   }
+  // Инструменты в формате OpenAI tools — для маленькой модели вызова функций (core/router.js)
+  const toolDefs = (ids) =>
+    toolsOf(ids).map((t) => ({
+      type: 'function',
+      function: {
+        name: t.name,
+        description: t.use,
+        parameters: {
+          type: 'object',
+          properties: { arg: { type: 'string', description: t.arg || '', ...(t.argEnum && { enum: t.argEnum }) } },
+          required: ['arg'],
+        },
+      },
+    }));
   const argAllowed = (name, arg) => !tools.get(name)?.tool.argEnum || tools.get(name).tool.argEnum.includes(arg);
 
   // --- база знаний: какие навыки нужны фразе ---
@@ -136,7 +186,9 @@ function createSkillRegistry(skills, { config, ctx, audit, platform = process.pl
   }
 
   function select(text, recent = []) {
-    const ranked = scores(text, recent).slice(0, MAX_SELECTED).map((x) => x.id);
+    const ranked = scores(text, recent)
+      .slice(0, MAX_SELECTED)
+      .map((x) => x.id);
     return [...enabled.filter((s) => s.always).map((s) => s.id), ...ranked];
   }
 
@@ -157,6 +209,9 @@ function createSkillRegistry(skills, { config, ctx, audit, platform = process.pl
   const fallback = () => enabled.find((s) => s.fallback && config.skills?.[s.id]?.enabled !== false)?.id || null;
 
   const skillOf = (toolName) => tools.get(toolName)?.skill || null;
+  // Описание инструмента и его навык: { tool, skill } или null (инструмента нет или навык выключен)
+  const toolInfo = (toolName) => tools.get(toolName) || null;
+  const skillInfo = (id) => byId.get(id) || null;
   const fillerOf = (toolName) => tools.get(toolName)?.tool.filler || null;
   const speaksOf = (toolName) => tools.get(toolName)?.tool.speaks === true;
 
@@ -217,11 +272,13 @@ function createSkillRegistry(skills, { config, ctx, audit, platform = process.pl
   return {
     names,
     catalogPrompt,
+    toolCatalogPrompt,
     detailsPrompt,
     toolsPrompt,
     rulesPrompt,
     examplesPrompt,
     actionSchema,
+    toolDefs,
     argAllowed,
     scores,
     select,
@@ -229,12 +286,15 @@ function createSkillRegistry(skills, { config, ctx, audit, platform = process.pl
     fallback,
     resolve,
     skillOf,
+    toolInfo,
+    skillInfo,
     fillerOf,
     speaksOf,
     quickPlan,
     prepare,
     run,
     init,
+    add,
     offer,
     CHAT_TOPIC,
     ids: () => enabled.map((s) => s.id),

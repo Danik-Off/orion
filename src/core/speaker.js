@@ -55,7 +55,14 @@ const round = (x) => Math.round(x * 100) / 100;
 // (но не выше обычного сходства собственных фраз — иначе человек перестанет узнаваться).
 function calibrate(templates, fallback, impostor) {
   if (templates.length < 3) return fallback;
-  const typical = median(templates.map((t, i) => personScore(templates.filter((_, j) => j !== i), t)));
+  const typical = median(
+    templates.map((t, i) =>
+      personScore(
+        templates.filter((_, j) => j !== i),
+        t,
+      ),
+    ),
+  );
   let threshold = Math.min(THRESHOLD_BASE_MAX, typical - 0.2);
   if (impostor != null) threshold = Math.max(threshold, Math.min(impostor + IMPOSTOR_MARGIN, typical - 0.08));
   return round(Math.min(THRESHOLD_MAX, Math.max(THRESHOLD_MIN, threshold)));
@@ -71,7 +78,15 @@ function levelDb(samples) {
 
 const publicPerson = (p) =>
   p
-    ? { id: p.id, name: p.name, honorific: p.honorific, threshold: p.threshold, samples: p.templates.length, level: p.level, noise: p.noise }
+    ? {
+        id: p.id,
+        name: p.name,
+        honorific: p.honorific,
+        threshold: p.threshold,
+        samples: p.templates.length,
+        level: p.level,
+        noise: p.noise,
+      }
     : null;
 
 function createSpeakerId({ modelsDir, dataDir, config, log = () => {} }) {
@@ -100,9 +115,7 @@ function createSpeakerId({ modelsDir, dataDir, config, log = () => {} }) {
   const save = () =>
     fs.writeFileSync(
       file,
-      JSON.stringify(
-        people.map(({ embedding, ...p }) => ({ ...p, templates: p.templates.map((t) => Array.from(t)) })),
-      ),
+      JSON.stringify(people.map(({ embedding, ...p }) => ({ ...p, templates: p.templates.map((t) => Array.from(t)) }))),
     );
   if (people.some((p) => !p.templates.length)) people = people.filter((p) => p.templates.length);
 
@@ -111,7 +124,15 @@ function createSpeakerId({ modelsDir, dataDir, config, log = () => {} }) {
   if (!people.length && fs.existsSync(legacy)) {
     try {
       const { embedding } = JSON.parse(fs.readFileSync(legacy, 'utf8'));
-      people.push({ id: 'owner', name: '', honorific: 'сэр', templates: [Float32Array.from(embedding)], threshold: config.threshold, learned: 0, created: Date.now() });
+      people.push({
+        id: 'owner',
+        name: '',
+        honorific: 'сэр',
+        templates: [Float32Array.from(embedding)],
+        threshold: config.threshold,
+        learned: 0,
+        created: Date.now(),
+      });
       save();
       fs.unlinkSync(legacy);
     } catch {}
@@ -166,7 +187,14 @@ function createSpeakerId({ modelsDir, dataDir, config, log = () => {} }) {
 
     const match = !!chosen;
     const shown = chosen || best;
-    last = { name: shown.p.name, score: round(shown.score), threshold: shown.p.threshold, match, via: match ? via : undefined, at: Date.now() };
+    last = {
+      name: shown.p.name,
+      score: round(shown.score),
+      threshold: shown.p.threshold,
+      match,
+      via: match ? via : undefined,
+      at: Date.now(),
+    };
 
     if (match) {
       // Фраза собеседника — запоминаем до конца разговора
@@ -230,7 +258,17 @@ function createSpeakerId({ modelsDir, dataDir, config, log = () => {} }) {
       let person = id && people.find((p) => p.id === id);
       if (person) Object.assign(person, { templates, threshold, learned: 0, level, noise });
       else {
-        person = { id: crypto.randomUUID(), name: '', honorific: 'сэр', templates, threshold, learned: 0, level, noise, created: Date.now() };
+        person = {
+          id: crypto.randomUUID(),
+          name: '',
+          honorific: 'сэр',
+          templates,
+          threshold,
+          learned: 0,
+          level,
+          noise,
+          created: Date.now(),
+        };
         people.push(person);
       }
       // Другой записанный голос почти неотличим — скорее всего, это тот же человек записан дважды

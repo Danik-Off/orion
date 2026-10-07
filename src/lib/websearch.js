@@ -32,7 +32,21 @@ function isPublicUrl(s) {
   );
 }
 
-const ENTITIES = { amp: '&', quot: '"', apos: "'", lt: '<', gt: '>', nbsp: ' ', laquo: '«', raquo: '»', mdash: '—', ndash: '–', hellip: '…', deg: '°', minus: '−' };
+const ENTITIES = {
+  amp: '&',
+  quot: '"',
+  apos: "'",
+  lt: '<',
+  gt: '>',
+  nbsp: ' ',
+  laquo: '«',
+  raquo: '»',
+  mdash: '—',
+  ndash: '–',
+  hellip: '…',
+  deg: '°',
+  minus: '−',
+};
 const decodeEntities = (s) =>
   s
     .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
@@ -40,7 +54,10 @@ const decodeEntities = (s) =>
     .replace(/&([a-z]+);/gi, (m, n) => ENTITIES[n.toLowerCase()] ?? m);
 
 const cleanText = (html, max = 300) =>
-  decodeEntities(html.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim().slice(0, max);
+  decodeEntities(html.replace(/<[^>]+>/g, ' '))
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
 
 async function fetchText(url, timeout) {
   const res = await fetch(url, { headers: HEADERS, redirect: 'follow', signal: AbortSignal.timeout(timeout) });
@@ -107,7 +124,11 @@ function extractMainText(html, query) {
     .filter((t) => t.length > 25);
 
   // Сначала абзацы, где есть слова из запроса, потом остальные по порядку.
-  const words = query.toLowerCase().split(/[^a-zа-яё0-9]+/i).filter((w) => w.length > 3).map((w) => w.slice(0, 5));
+  const words = query
+    .toLowerCase()
+    .split(/[^a-zа-яё0-9]+/i)
+    .filter((w) => w.length > 3)
+    .map((w) => w.slice(0, 5));
   const relevance = (t) => words.reduce((n, w) => n + (t.toLowerCase().includes(w) ? 1 : 0), 0) + (/\d/.test(t) ? 0.5 : 0);
   const ranked = blocks.map((t, i) => ({ t, i, r: relevance(t) })).sort((a, b) => b.r - a.r || a.i - b.i);
 
@@ -149,8 +170,11 @@ async function wiki(query, lang = 'ru') {
   if (!title) return null;
   const p = await getJson(`https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`);
   if (!p.extract) return null;
-  return { title: p.title, url: p.content_urls?.desktop?.page || `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title)}`, text: p.extract.slice(0, 2500) };
+  return {
+    title: p.title,
+    url: p.content_urls?.desktop?.page || `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title)}`,
+    text: p.extract.slice(0, 2500),
+  };
 }
 
 module.exports = { research, searchWeb, wiki, isHttpUrl, isPublicUrl, extractMainText };
-

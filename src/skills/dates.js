@@ -3,11 +3,24 @@ const { plural } = require('../lib/ru');
 
 // Праздники и памятные дни [месяц, день, название]; День программиста — 256-й день года
 const HOLIDAYS = [
-  [1, 1, 'Новый год'], [1, 7, 'Рождество Христово'], [1, 25, 'Татьянин день'], [2, 14, 'День святого Валентина'],
-  [2, 23, 'День защитника Отечества'], [3, 8, 'Международный женский день'], [4, 1, 'День смеха'],
-  [4, 12, 'День космонавтики'], [5, 1, 'Праздник Весны и Труда'], [5, 9, 'День Победы'], [6, 1, 'День защиты детей'],
-  [6, 12, 'День России'], [7, 8, 'День семьи, любви и верности'], [8, 22, 'День Государственного флага'],
-  [9, 1, 'День знаний'], [10, 5, 'День учителя'], [11, 4, 'День народного единства'], [12, 12, 'День Конституции'],
+  [1, 1, 'Новый год'],
+  [1, 7, 'Рождество Христово'],
+  [1, 25, 'Татьянин день'],
+  [2, 14, 'День святого Валентина'],
+  [2, 23, 'День защитника Отечества'],
+  [3, 8, 'Международный женский день'],
+  [4, 1, 'День смеха'],
+  [4, 12, 'День космонавтики'],
+  [5, 1, 'Праздник Весны и Труда'],
+  [5, 9, 'День Победы'],
+  [6, 1, 'День защиты детей'],
+  [6, 12, 'День России'],
+  [7, 8, 'День семьи, любви и верности'],
+  [8, 22, 'День Государственного флага'],
+  [9, 1, 'День знаний'],
+  [10, 5, 'День учителя'],
+  [11, 4, 'День народного единства'],
+  [12, 12, 'День Конституции'],
   [12, 31, 'Новогодний вечер'],
 ];
 const programmersDay = (y) => new Date(y, 0, 256);
@@ -19,14 +32,17 @@ const longDate = (d) => d.toLocaleDateString('ru-RU', { day: 'numeric', month: '
 const weekday = (d) => d.toLocaleDateString('ru-RU', { weekday: 'long' });
 
 function holidaysOfYear(y) {
-  return [...HOLIDAYS.map(([m, d, name]) => ({ date: new Date(y, m - 1, d), name })), { date: programmersDay(y), name: 'День программиста' }].sort(
-    (a, b) => a.date - b.date,
-  );
+  return [
+    ...HOLIDAYS.map(([m, d, name]) => ({ date: new Date(y, m - 1, d), name })),
+    { date: programmersDay(y), name: 'День программиста' },
+  ].sort((a, b) => a.date - b.date);
 }
 
 function holidays(from = new Date(), count = 3) {
   const today = startOfDay(from);
-  return [...holidaysOfYear(today.getFullYear()), ...holidaysOfYear(today.getFullYear() + 1)].filter((h) => h.date >= today).slice(0, count);
+  return [...holidaysOfYear(today.getFullYear()), ...holidaysOfYear(today.getFullYear() + 1)]
+    .filter((h) => h.date >= today)
+    .slice(0, count);
 }
 
 // "2026-12-31" → дата; "12-31" / "31.12" → ближайшая такая
@@ -61,9 +77,7 @@ function dateInfo(arg, now = new Date()) {
   if (/^(weekday|день недели)/.test(a)) return `${longDate(date)} ${date.getFullYear()} года — ${weekday(date)}.`;
   const n = daysBetween(now, date);
   if (n === 0) return `Это сегодня.`;
-  return n > 0
-    ? `До ${longDate(date)} осталось ${daysWord(n)}, это ${weekday(date)}.`
-    : `С ${longDate(date)} прошло ${daysWord(-n)}.`;
+  return n > 0 ? `До ${longDate(date)} осталось ${daysWord(n)}, это ${weekday(date)}.` : `С ${longDate(date)} прошло ${daysWord(-n)}.`;
 }
 
 function timeNow(now = new Date()) {
@@ -74,7 +88,11 @@ function timeNow(now = new Date()) {
 
 // «который час», «сколько времени», «какое сегодня число», «какой сегодня день» — мгновенно
 function quick(text) {
-  const t = text.toLowerCase().replace(/ё/g, 'е').replace(/[^а-я ]+/g, '').trim();
+  const t = text
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[^а-я ]+/g, '')
+    .trim();
   if (/^(который час|сколько (сейчас )?времени|сколько время|скажи (который час|время))$/.test(t)) {
     return { addressed: true, say: timeNow(), actions: [] };
   }
@@ -82,7 +100,10 @@ function quick(text) {
     return { addressed: true, say: dateInfo('today'), actions: [] };
   }
   // «сколько дней до нового года», «сколько осталось до 8 марта» — праздник по названию или «8 марта»
-  const until = text.toLowerCase().replace(/ё/g, 'е').match(/^сколько (?:дней |времени )?(?:осталось )?до (.+?)[?.!]*$/);
+  const until = text
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .match(/^сколько (?:дней |времени )?(?:осталось )?до (.+?)[?.!]*$/);
   if (until) {
     const date = holidayDate(until[1]);
     if (date) return { addressed: true, say: '', actions: [{ tool: 'date_info', arg: `until ${date}` }] };
@@ -119,18 +140,22 @@ function holidayDate(phrase) {
 
 module.exports = {
   id: 'dates',
+  needs: ['now'],
   title: 'сколько дней до даты, день недели для даты, ближайшие праздники',
   keywords: ['сколько дней', 'через сколько', 'день недели', 'праздник', 'какое число', 'какой день', 'дней до', 'осталось до'],
   quick,
   tools: [
     {
       name: 'date_info',
+
+      llmArg: true,
       speaks: true, // ответ всегда даёт сам инструмент
       use: 'сколько дней до даты или с даты, какой день недели, ближайшие праздники',
       arg: '"until ГГГГ-ММ-ДД" | "weekday ГГГГ-ММ-ДД" | "holidays" | "today"',
       examples: [['сколько дней до нового года', { addressed: true, say: '', actions: [{ tool: 'date_info', arg: 'until 01-01' }] }]],
       // Голая дата «2026-10-05»: день недели или сколько осталось — видно по фразе
-      normalize: (arg, text) => (/^\d{4}-\d{2}-\d{2}$/.test(arg.trim()) ? `${/день недели/i.test(text) ? 'weekday' : 'until'} ${arg.trim()}` : arg),
+      normalize: (arg, text) =>
+        /^\d{4}-\d{2}-\d{2}$/.test(arg.trim()) ? `${/день недели/i.test(text) ? 'weekday' : 'until'} ${arg.trim()}` : arg,
       run: async (arg) => {
         const speak = dateInfo(arg);
         return speak ? { ok: true, speak } : { ok: false, message: 'Не понял дату, сэр.' };

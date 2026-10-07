@@ -3,21 +3,59 @@
 
 // Части адреса, которые говорят словом
 const DOMAIN_WORDS = {
-  ya: 'я', yandex: 'яндекс', google: 'гугл', youtube: 'ютуб', vk: 'вэ-к+а', mail: 'мейл', gmail: 'джим+ейл',
-  github: 'гитхаб', wikipedia: 'википедия', telegram: 'телеграм', t: 'тэ', ozon: 'озон', avito: 'авито',
-  gosuslugi: 'госуслуги', sber: 'сбер', tinkoff: 'тинькофф', rutube: 'рутуб', dzen: 'дзен', habr: 'хабр',
-  ru: 'ру', com: 'ком', org: 'орг', net: 'нет', io: 'ай-+оу', dev: 'дев', info: 'инфо', su: 'эс-+ю', me: 'ми', app: 'эпп',
+  ya: 'я',
+  yandex: 'яндекс',
+  google: 'гугл',
+  youtube: 'ютуб',
+  vk: 'вэ-к+а',
+  mail: 'мейл',
+  gmail: 'джим+ейл',
+  github: 'гитхаб',
+  wikipedia: 'википедия',
+  telegram: 'телеграм',
+  t: 'тэ',
+  ozon: 'озон',
+  avito: 'авито',
+  gosuslugi: 'госуслуги',
+  sber: 'сбер',
+  tinkoff: 'тинькофф',
+  rutube: 'рутуб',
+  dzen: 'дзен',
+  habr: 'хабр',
+  ru: 'ру',
+  com: 'ком',
+  org: 'орг',
+  net: 'нет',
+  io: 'ай-+оу',
+  dev: 'дев',
+  info: 'инфо',
+  su: 'эс-+ю',
+  me: 'ми',
+  app: 'эпп',
 };
 const TLD = /^(ru|com|org|net|io|dev|info|su|me|app|рф|uk|de|by|kz|ua|edu|gov|tv|ai)$/i;
 const sayLabel = (label) => DOMAIN_WORDS[label.toLowerCase()] ?? (label.toLowerCase() === 'рф' ? 'эр-+эф' : label);
 
 // «https://ya.ru/search?text=…» → «я точка ру»: путь и параметры вслух не нужны
 function speakDomain(host) {
-  return host.replace(/^www\./i, '').split('.').filter(Boolean).map(sayLabel).join(' точка ');
+  return host
+    .replace(/^www\./i, '')
+    .split('.')
+    .filter(Boolean)
+    .map(sayLabel)
+    .join(' точка ');
 }
 
 // ½ ⅓ ¼ ¾ ⅔ — как говорят: «половина», «треть», «четверть»
-const VULGAR = { '½': 'половина', '⅓': 'треть', '¼': 'четверть', '¾': 'три четверти', '⅔': 'две трети', '⅕': 'одна пятая', '⅛': 'одна восьмая' };
+const VULGAR = {
+  '½': 'половина',
+  '⅓': 'треть',
+  '¼': 'четверть',
+  '¾': 'три четверти',
+  '⅔': 'две трети',
+  '⅕': 'одна пятая',
+  '⅛': 'одна восьмая',
+};
 
 const MMHG = ['миллиметр', 'миллиметра', 'миллиметров'];
 function plural(n, [one, few, many]) {

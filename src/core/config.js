@@ -4,12 +4,28 @@ const fs = require('node:fs');
 const DEFAULTS = {
   name: 'Орион',
   city: 'Москва',
-  // Движок языковой модели: llamacpp — встроенный llama.cpp, он и модель скачиваются в папку models;
-  // ollama — отдельная программа Ollama (ollama.com) со своими моделями
+  // Первой отвечает маленькая модель (router, ниже). Не уверена — передаёт большой, если escalate включён.
+  escalate: true,
+  // Большая языковая модель («мозг»): llamacpp — Qwen на этом компьютере (встроенный llama.cpp, скачивается
+  // по согласию — см. brainOffer); ollama — отдельная программа Ollama; remote — внешняя модель по API (remote ниже);
+  // none — без большой модели: только быстрые команды и маленькая модель вызова функций (router).
+  // Выбранная, но ещё не скачанная модель работает как none
   backend: 'llamacpp',
+  // Внешняя модель как основная (backend: remote) и для подстраховки локальной (cloud.enabled):
+  // type — 'openai' (любой OpenAI-совместимый /chat/completions: OpenRouter, DeepSeek, YandexGPT, LM Studio…)
+  // или 'anthropic' (официальный SDK; ключ — apiKey или ANTHROPIC_API_KEY)
+  remote: { type: 'openai', baseUrl: '', apiKey: '', model: '' },
+  // После первой установки предложить: «Я могу стать умнее — докачать Qwen или подключить внешнюю модель»
+  brainOffer: true,
   // llama.cpp: build — версия сборки (github.com/ggml-org/llama.cpp/releases); variant — своя сборка
-  // (например, win-cuda-13.4-x64), иначе Vulkan или Metal под эту машину; device — видеокарта (Vulkan0 и т. п.)
-  llamaCpp: { build: 'b11205', variant: '', device: '', gpuLayers: 999 },
+  // (например, win-cuda-13.4-x64), иначе Vulkan или Metal под эту машину; device — видеокарта (Vulkan0 и т. п.);
+  // slots — окна контекста с отдельным кэшем: диспетчер и узкие промпты инструментов не вытесняют друг друга
+  llamaCpp: { build: 'b11205', variant: '', device: '', gpuLayers: 999, slots: 2 },
+  // Разбор фразы большой моделью, когда маленькая не узнала инструмент: 'single' — один промпт (каталог навыков
+  // и подробности подходящих); 'two-step' — диспетчер решает, что делать, затем на каждый шаг — короткий диалог
+  // с узким промптом инструмента. Замер 2026-10-07 (108 фраз, Qwen 3.5 4B): single 96% / 435 мс,
+  // two-step 88% / 747 мс — лишний вызов модели. Узнанный маленькой моделью инструмент идёт в узкий промпт всегда.
+  planner: 'single',
   ollamaUrl: 'http://127.0.0.1:11434',
   model: 'qwen3.5:4b', // имя модели (одно для обоих движков) или имя своего файла .gguf в models/llm
   think: false,
@@ -21,6 +37,32 @@ const DEFAULTS = {
   planTemperature: 0.1,
   // Окно контекста: промпт с каталогом, навыками фразы, памятью и историей — до ~4 тыс. токенов в худшем случае
   numCtx: 6144,
+  // Выгружать большую модель после стольких минут без запросов (видеопамять свободна, пока ассистент молчит).
+  // Загружается снова, как только услышано имя, — пока звучит команда. 0 — не выгружать
+  llmIdleMinutes: 10,
+  // Первая ступень (core/router.js): маленькая модель вызова функций берёт простые команды сама, остальное
+  // передаёт большой. enabled — включена (скачивается при первом запуске вместе с голосом и слухом); model — имя из списка
+  // llama.js или свой файл .gguf в models/llm; exclude — навыки с тонкими аргументами, их ведёт только большая;
+  // collect — записывать планы большой модели как примеры для дообучения (router-data.jsonl в папке данных)
+  router: {
+    enabled: true,
+    model: 'orion-router', // дообученная (скачивается при первом запуске); свой файл .gguf из models/llm — тоже можно
+    gpuLayers: 999,
+    exclude: ['delegate', 'memory', 'scenarios', 'files', 'journal', 'notes', 'text', 'reminders', 'facts', 'power', 'dates', 'calc'],
+    collect: true,
+    // Вызов принимается, только если модель уверена в каждом его токене не меньше этого (0…1);
+    // подбирается по npm run router-eval — так, чтобы «взял неверно» было около нуля
+    minConfidence: 0.95,
+  },
+  // Последняя ступень (core/cloud.js): облачная модель, когда локальная ответила «не умею» / «не знаю».
+  // Выключено; ask — спрашивать разрешения перед каждой отправкой; use — id провайдера из providers
+  // (пусто и providers пуст — внешняя модель из remote):
+  //   { "id": "claude", "type": "anthropic", "apiKey": "", "model": "claude-opus-5-5" }
+  //   { "id": "openrouter", "type": "openai", "baseUrl": "https://openrouter.ai/api/v1", "apiKey": "…", "model": "…" }
+  cloud: { enabled: false, ask: true, use: '', providers: [] },
+  // Сторонние MCP-серверы — как навыки (core/mcp.js): { "<имя>": { command, args, env } | { url, headers } }.
+  // Ставятся из каталога в настройках («Подключения») или вручную; trust: true — действия без вопроса
+  mcp: { servers: {} },
   hotkey: 'CommandOrControl+Alt+J',
   speech: {
     modelsDir: '',

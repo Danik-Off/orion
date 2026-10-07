@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Орион — настройки</title>
+    <link rel="stylesheet" href="settings.css" />
+  </head>
+  <body>
+    <svg class="sprite" aria-hidden="true">
+      <symbol id="i-general" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></symbol>
+      <symbol id="i-voice" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4zM16.5 8.5a5 5 0 0 1 0 7" /></symbol>
+      <symbol id="i-hearing" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></symbol>
+      <symbol id="i-models" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" /><path d="M10 10h4v4h-4zM9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4" /></symbol>
+      <symbol id="i-quick" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" /></symbol>
+      <symbol id="i-skills" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></symbol>
+      <symbol id="i-advanced" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" /></symbol>
+      <symbol id="i-components" viewBox="0 0 24 24"><path d="M12 3l9 5v8l-9 5-9-5V8l9-5zM3 8l9 5 9-5M12 13v8" /></symbol>
+      <symbol id="i-about" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7v1" /></symbol>
+      <symbol id="i-connections" viewBox="0 0 24 24"><path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0V8zM12 17v4" /></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6" /><path d="M20 20l-4.5-4.5" /></symbol>
+    </svg>
+
+    <header class="titlebar">
+      <span class="logo" aria-hidden="true"></span>
+      <span class="titlebar-text" id="window-title">Настройки</span>
+    </header>
+
+    <div class="layout">
+      <nav class="sidebar" aria-label="Разделы настроек">
+        <label class="search">
+          <svg><use href="#i-search" /></svg>
+          <input id="search" type="search" placeholder="Поиск настроек" autocomplete="off" spellcheck="false" />
+        </label>
+        <div id="nav"></div>
+      </nav>
+
+      <main class="content" id="content" tabindex="-1">
+        <div id="restart-bar" class="restart-bar" hidden>
+          <span>Часть изменений заработает после перезапуска.</span>
+          <button id="restart" class="btn primary" type="button">Перезапустить</button>
+        </div>
+        <div id="error" class="settings-error" role="alert" hidden></div>
+        <div id="page"></div>
+      </main>
+    </div>
+
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

@@ -53,7 +53,8 @@ async function home(arg, ctx) {
     const found = await findEntity(ctx, query);
     if (!found) return { ok: false, message: `Не нашёл «${query}» в умном доме, сэр.` };
     const unit = found.s.attributes?.unit_of_measurement || '';
-    const state = { on: 'включено', off: 'выключено', open: 'открыто', closed: 'закрыто', unavailable: 'недоступно' }[found.s.state] || found.s.state;
+    const state =
+      { on: 'включено', off: 'выключено', open: 'открыто', closed: 'закрыто', unavailable: 'недоступно' }[found.s.state] || found.s.state;
     return { ok: true, speak: `${found.name}: ${state}${unit ? ` ${unit}` : ''}.` };
   }
   const action = ACTIONS[v];
@@ -68,8 +69,23 @@ async function home(arg, ctx) {
 
 module.exports = {
   id: 'smarthome',
+  needs: [],
   title: 'умный дом (Home Assistant): свет, розетки, шторы, сцены, датчики температуры',
-  keywords: ['свет', 'ламп', 'розетк', 'штор', 'жалюз', 'кондиц', 'обогрев', 'умный дом', 'датчик', 'температура в', 'влажност', 'сцен', 'люстр'],
+  keywords: [
+    'свет',
+    'ламп',
+    'розетк',
+    'штор',
+    'жалюз',
+    'кондиц',
+    'обогрев',
+    'умный дом',
+    'датчик',
+    'температура в',
+    'влажност',
+    'сцен',
+    'люстр',
+  ],
   available: (config) => Boolean(config.homeAssistant?.url && config.homeAssistant?.token),
   tools: [
     {

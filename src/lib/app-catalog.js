@@ -3,9 +3,39 @@
 const { powershell, asJsonList } = require('./windows');
 
 const TRANSLIT = {
-  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'i',
-  к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f',
-  х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
+  а: 'a',
+  б: 'b',
+  в: 'v',
+  г: 'g',
+  д: 'd',
+  е: 'e',
+  ё: 'e',
+  ж: 'zh',
+  з: 'z',
+  и: 'i',
+  й: 'i',
+  к: 'k',
+  л: 'l',
+  м: 'm',
+  н: 'n',
+  о: 'o',
+  п: 'p',
+  р: 'r',
+  с: 's',
+  т: 't',
+  у: 'u',
+  ф: 'f',
+  х: 'h',
+  ц: 'ts',
+  ч: 'ch',
+  ш: 'sh',
+  щ: 'sch',
+  ъ: '',
+  ы: 'y',
+  ь: '',
+  э: 'e',
+  ю: 'yu',
+  я: 'ya',
 };
 
 // «телеграм» и «Telegram», «дискорд» и «Discord», «стим» и «Steam» приводятся к одному виду.
@@ -66,7 +96,8 @@ function score(query, name) {
 }
 
 // Справка, деинсталляторы, ссылки на сайты и служебные пункты в каталог не попадают.
-const JUNK_NAME = /uninstall|удал|readme|help|справк|documentation|документац|license|лиценз|website|web site|release notes|virtual network adapter|manual|руководств/i;
+const JUNK_NAME =
+  /uninstall|удал|readme|help|справк|documentation|документац|license|лиценз|website|web site|release notes|virtual network adapter|manual|руководств/i;
 const JUNK_TARGET = /^https?:|\.(chm|txt|pdf|html?|url|ini|log|rtf)$/i;
 
 // Список «Пуск» загружается один раз на всё приложение, сколько бы навыков ни создали каталог

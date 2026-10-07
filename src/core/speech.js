@@ -5,7 +5,10 @@ const path = require('node:path');
 const SAMPLE_RATE = 16000;
 
 function pick(dir, re) {
-  const found = fs.readdirSync(dir).filter((n) => re.test(n)).sort((a, b) => a.length - b.length);
+  const found = fs
+    .readdirSync(dir)
+    .filter((n) => re.test(n))
+    .sort((a, b) => a.length - b.length);
   if (!found.length) throw new Error(`В ${dir} нет файла ${re}`);
   return path.join(dir, found[0]);
 }
@@ -27,7 +30,7 @@ function ensureBpeVocab(dir) {
     }
   };
   const lines = [];
-  for (let p = 0; p < buf.length; ) {
+  for (let p = 0; p < buf.length;) {
     let tag;
     [tag, p] = varint(buf, p);
     const wire = tag & 7;
@@ -41,7 +44,7 @@ function ensureBpeVocab(dir) {
         // SentencePiece { 1: piece, 2: score }
         let piece = '';
         let score = 0;
-        for (let q = p; q < p + len; ) {
+        for (let q = p; q < p + len;) {
           let t;
           [t, q] = varint(buf, q);
           if ((t & 7) === 2) {
@@ -209,7 +212,13 @@ function createSpeech({ modelsDir, config = {}, log = console.warn }) {
       vad = new sherpa.Vad(
         {
           // порог 0.35 (а не 0.5): тихое «Орион» чаще доходит до распознавателя
-          sileroVad: { model: vadFile, threshold: config.vadThreshold ?? 0.35, minSilenceDuration: 0.4, minSpeechDuration: 0.15, windowSize: 512 },
+          sileroVad: {
+            model: vadFile,
+            threshold: config.vadThreshold ?? 0.35,
+            minSilenceDuration: 0.4,
+            minSpeechDuration: 0.15,
+            windowSize: 512,
+          },
           sampleRate: SAMPLE_RATE,
           numThreads: 1,
           provider: 'cpu',
@@ -382,8 +391,8 @@ function createSpeech({ modelsDir, config = {}, log = console.warn }) {
       const { all, voice } = takeUtterance();
       if (!text) return null;
       // Точный текст — от второго прохода; быстрый остаётся запасным (и для поиска имени)
-      const precise = recognizeAgain(all);
-      return { final: precise || text, firstPass: text, audio: voice };
+      const accurate = recognizeAgain(all);
+      return { final: accurate || text, firstPass: text, audio: voice };
     }
     if (text === lastPartial) return null;
     lastPartial = text;
@@ -447,7 +456,20 @@ function createSpeech({ modelsDir, config = {}, log = console.warn }) {
 
   const setQuickEnd = (fn) => (quickEnd = typeof fn === 'function' ? fn : null);
 
-  return { stt: !!recognizer, tts: !!tts, vad: !!vad, secondPass: !!secondPass, sampleRate: SAMPLE_RATE, feed, resetStream, setListening, setGain, setQuickEnd, levels, synth };
+  return {
+    stt: !!recognizer,
+    tts: !!tts,
+    vad: !!vad,
+    secondPass: !!secondPass,
+    sampleRate: SAMPLE_RATE,
+    feed,
+    resetStream,
+    setListening,
+    setGain,
+    setQuickEnd,
+    levels,
+    synth,
+  };
 }
 
 module.exports = { createSpeech, trimSilence };

@@ -2,7 +2,7 @@
 //  • Профиль: имя и город — на них опираются навыки (погода по городу собеседника и т.п.).
 //  • Факты: короткие утверждения с номерами. Добавляются, обновляются по номеру и удаляются;
 //    у временных («завтра собеседование») есть срок жизни. В запрос попадают только относящиеся к делу.
-// Разговоры здесь не хранятся: после диалога полезное переносится в факты (см. core/assistant.js),
+// Разговоры здесь не хранятся: после диалога полезное переносится в факты (см. core/assistant/session.js),
 // остальное забывается — маленькой модели вредит длинный контекст.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -93,9 +93,7 @@ function createPersonMemory(dir) {
     if (!text) return { ok: false, message: 'Что именно запомнить?' };
 
     // Явное обновление по номеру или почти такой же факт — заменяем, а не копим дубликаты
-    const target = replace
-      ? facts.find((f) => f.id === Number(replace[1]))
-      : facts.find((f) => similarity(f.text, text) >= 0.8);
+    const target = replace ? facts.find((f) => f.id === Number(replace[1])) : facts.find((f) => similarity(f.text, text) >= 0.8);
     const now = Date.now();
     const expires = days ? now + days * 86_400_000 : undefined;
     if (target) {
@@ -132,10 +130,13 @@ function createPersonMemory(dir) {
   function relevantFacts(query) {
     prune();
     if (facts.length <= FACTS_IN_PROMPT) return facts;
-    const ranked = facts
-      .map((f) => ({ f, s: similarity(f.text, query) }))
-      .sort((a, b) => b.s - a.s || b.f.updated - a.f.updated);
-    const chosen = new Set(ranked.filter((x) => x.s > 0).slice(0, FACTS_IN_PROMPT - 3).map((x) => x.f));
+    const ranked = facts.map((f) => ({ f, s: similarity(f.text, query) })).sort((a, b) => b.s - a.s || b.f.updated - a.f.updated);
+    const chosen = new Set(
+      ranked
+        .filter((x) => x.s > 0)
+        .slice(0, FACTS_IN_PROMPT - 3)
+        .map((x) => x.f),
+    );
     for (const f of [...facts].sort((a, b) => b.updated - a.updated)) {
       if (chosen.size >= FACTS_IN_PROMPT) break;
       chosen.add(f);

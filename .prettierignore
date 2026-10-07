@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+models/
+data/
+voice-check/
+wake-eval/
+voice-samples/
+src/assets/
+test/fixtures/
+package-lock.json
+*.md
+*.html
+.serena/
+.github/
+# пишет само приложение при сохранении настроек
+config.json

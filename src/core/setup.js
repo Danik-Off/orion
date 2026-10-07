@@ -1,9 +1,11 @@
-// Установка всего, что нужно ассистенту: модели речи и языковая модель.
-// Идёт по этапам, чтобы ассистент как можно раньше заговорил:
+// Установка всего, что нужно ассистенту: модели речи и языковые модели. Идёт по этапам, чтобы ассистент
+// как можно раньше заговорил:
 //   voice   — голос (синтез) и детектор речи: после него ассистент может представиться;
 //   hearing — распознавание речи и узнавание голоса;
-//   brain   — языковая модель: llama.cpp и файл модели в папке models (или модель в Ollama, если выбран он).
-// Используется приложением при первом запуске и командой `npm run models`.
+//   router  — маленькая модель вызова функций (~300 МБ) и llama.cpp: команды без большой модели;
+//   brain   — большая языковая модель (Qwen, ~2,7 ГБ, или модель в Ollama) — только по согласию:
+//             после первой установки ассистент предлагает её сам, позже — кнопка в настройках.
+// Первый запуск ставит FIRST_RUN. Используется приложением и командой `npm run models`.
 const fs = require('node:fs');
 const path = require('node:path');
 const { Readable, Transform } = require('node:stream');
@@ -18,6 +20,8 @@ const SUPERTONIC_FP32 = 'https://huggingface.co/Supertone/supertonic-3/resolve/m
 const TAR = process.platform === 'win32' ? path.join(process.env.SystemRoot, 'System32', 'tar.exe') : 'tar';
 
 const useOllama = (config) => config.backend === 'ollama';
+const FIRST_RUN = ['voice', 'hearing', 'router'];
+const ALL_STAGES = ['voice', 'hearing', 'router', 'brain'];
 
 // Что скачать: { stage, name, url, target, archive?, unpackTo? } — target проверяется на существование
 function plan(config, modelsDir) {
@@ -38,23 +42,45 @@ function plan(config, modelsDir) {
   if (/supertonic-3/.test(s.ttsModel || '') && ['vocoder', 'full'].includes(s.ttsPrecision)) {
     const parts = s.ttsPrecision === 'full' ? ['vocoder', 'vector_estimator', 'text_encoder', 'duration_predictor'] : ['vocoder'];
     for (const p of parts) {
-      items.push({ stage: 'voice', name: `supertonic-3 ${p}`, url: `${SUPERTONIC_FP32}/${p}.onnx`, target: path.join(modelsDir, 'supertonic-3-fp32', `${p}.onnx`) });
+      items.push({
+        stage: 'voice',
+        name: `supertonic-3 ${p}`,
+        url: `${SUPERTONIC_FP32}/${p}.onnx`,
+        target: path.join(modelsDir, 'supertonic-3-fp32', `${p}.onnx`),
+      });
     }
   }
   if (s.asrModel) items.push(archive('hearing', 'asr-models', s.asrModel));
   if (s.asrSecondPass) items.push(archive('hearing', 'asr-models', s.asrSecondPass));
   if (s.speaker?.model && s.speaker.require !== 'off') items.push(file('hearing', 'speaker-recongition-models', s.speaker.model));
 
-  // Языковая модель в llama.cpp: сам llama.cpp (~35 МБ) и файл модели. В Ollama модель качает Ollama (см. install)
-  if (!useOllama(config)) {
-    const l = llama.paths(config, modelsDir);
-    items.push({ stage: 'brain', name: `llama.cpp ${config.llamaCpp.build}`, url: l.url, target: l.exe, archive: true, unpackTo: l.dir });
+  // llama.cpp (~35 МБ) — один на обе модели; ставится с той, что качается первой
+  const l = llama.paths(config, modelsDir);
+  const engine = (stage) => ({
+    stage,
+    name: `llama.cpp ${config.llamaCpp.build}`,
+    url: l.url,
+    target: l.exe,
+    archive: true,
+    unpackTo: l.dir,
+  });
+  // Маленькая модель первой ступени (core/router.js) всегда работает во встроенном llama.cpp — даже при Ollama
+  if (config.router?.enabled) {
+    items.push(engine('router'));
+    const r = llama.paths({ ...config, model: config.router.model }, modelsDir);
+    if (r.ggufUrl) items.push({ stage: 'router', name: path.basename(r.gguf), url: r.ggufUrl, target: r.gguf, size: r.size });
+  }
+  // Большая модель на этом компьютере. В Ollama её качает сам Ollama (см. install), внешней качать нечего
+  if (config.backend === 'llamacpp') {
+    if (!config.router?.enabled) items.push(engine('brain'));
     if (l.ggufUrl) items.push({ stage: 'brain', name: path.basename(l.gguf), url: l.ggufUrl, target: l.gguf, size: l.size });
   }
   return items;
 }
 
-const missing = (config, modelsDir) => plan(config, modelsDir).filter((i) => !fs.existsSync(i.target));
+// Чего не хватает на этапах stages (по умолчанию — на всех)
+const missing = (config, modelsDir, stages = ALL_STAGES) =>
+  plan(config, modelsDir).filter((i) => stages.includes(i.stage) && !fs.existsSync(i.target));
 
 // Скачивание с прогрессом: onProgress(доля 0..1). Оборванная загрузка продолжается с того же места
 // (файл модели — гигабайты, начинать заново обидно)
@@ -155,10 +181,19 @@ async function ollamaPull(config, onProgress) {
   }
 }
 
-// Языковая модель готова? llama.cpp — файлы на месте; Ollama — модель в Ollama
+// Внешняя модель настроена: есть модель и адрес (у OpenAI-совместимой) или ключ (у Anthropic — можно в окружении)
+function remoteConfigured(config) {
+  const r = config.remote || {};
+  if (!r.model) return false;
+  return r.type === 'anthropic' ? !!(r.apiKey || process.env.ANTHROPIC_API_KEY) : !!r.baseUrl;
+}
+
+// Большая модель готова? llama.cpp — файлы на месте; Ollama — модель в Ollama; внешняя — настроена; none — нет
 async function brainReady(config, modelsDir) {
-  if (!useOllama(config)) return !missing(config, modelsDir).some((i) => i.stage === 'brain');
-  return ollamaHasModel(config).catch(() => false);
+  if (config.backend === 'llamacpp') return missing(config, modelsDir, ['brain']).length === 0;
+  if (useOllama(config)) return ollamaHasModel(config).catch(() => false);
+  if (config.backend === 'remote') return remoteConfigured(config);
+  return false;
 }
 
 // --- Сколько весит установка: показываем до начала загрузки ---
@@ -176,7 +211,12 @@ const KNOWN_SIZES = {
   '3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx': 28e6,
 };
 const KNOWN_OLLAMA_SIZES = { 'qwen3.5:4b': 3.4e9 };
-const PART_TITLES = { voice: 'Голос', hearing: 'Слух: распознавание речи и голосов', brain: 'Языковая модель' };
+const PART_TITLES = {
+  voice: 'Голос',
+  hearing: 'Слух: распознавание речи и голосов',
+  router: 'Быстрые команды (маленькая модель)',
+  brain: 'Большая языковая модель',
+};
 
 async function remoteSize(url) {
   try {
@@ -207,11 +247,11 @@ async function ollamaModelSize(model) {
 
 // Что предстоит скачать: { parts: [{ stage, title, bytes }], total, ollama }
 //   ollama: false — выбран движок Ollama, а он не отвечает: его нужно поставить отдельно (ollama.com)
-async function estimate(config, modelsDir) {
-  const todo = missing(config, modelsDir);
+async function estimate(config, modelsDir, stages = FIRST_RUN) {
+  const todo = missing(config, modelsDir, stages);
   const sizes = await Promise.all(todo.map(async (i) => (await remoteSize(i.url)) ?? i.size ?? KNOWN_SIZES[i.name] ?? 0));
   const brainTitle = `${PART_TITLES.brain} ${config.model}`;
-  const parts = ['voice', 'hearing', 'brain']
+  const parts = stages
     .map((stage) => ({
       stage,
       title: stage === 'brain' ? brainTitle : PART_TITLES[stage],
@@ -221,7 +261,7 @@ async function estimate(config, modelsDir) {
     .filter((p) => p.count > 0);
 
   let ollama = true;
-  if (useOllama(config)) {
+  if (useOllama(config) && stages.includes('brain')) {
     const has = await ollamaHasModel(config).catch(() => ((ollama = false), false));
     if (!has) {
       const bytes = (await ollamaModelSize(config.model)) ?? KNOWN_OLLAMA_SIZES[config.model] ?? 0;
@@ -243,13 +283,15 @@ function formatBytes(n) {
 const STAGES = {
   voice: 'Устанавливаю голосовой модуль',
   hearing: 'Устанавливаю слух: распознавание речи и голосов',
-  brain: 'Загружаю языковую модель',
+  router: 'Устанавливаю быстрые команды',
+  brain: 'Загружаю большую языковую модель',
 };
 
 // report({ stage, title, progress 0..1, done?, error? }); onStageDone(stage, changed) — подключать модули по мере готовности
-async function install({ config, modelsDir, report = () => {}, onStageDone = async () => {} }) {
-  const todo = missing(config, modelsDir);
-  for (const stage of ['voice', 'hearing', 'brain']) {
+// stages — какие этапы ставить (по умолчанию — первый запуск: без большой модели)
+async function install({ config, modelsDir, stages = FIRST_RUN, report = () => {}, onStageDone = async () => {} }) {
+  const todo = missing(config, modelsDir, stages);
+  for (const stage of stages) {
     const items = todo.filter((i) => i.stage === stage);
     try {
       for (const [k, item] of items.entries()) {
@@ -261,15 +303,16 @@ async function install({ config, modelsDir, report = () => {}, onStageDone = asy
         });
       }
     } catch (err) {
-      if (stage !== 'brain') throw err;
+      if (stage !== 'brain' && stage !== 'router') throw err; // без моделей ассистент работает, без голоса и слуха — нет
       report({ stage, title: `Модель не загрузилась: ${err.message}. Перезапустите меня — докачаю.`, error: true });
-      return;
+      if (stage === 'brain') return;
+      continue; // быстрые команды не скачались — остальное ставим дальше
     }
     if (stage === 'brain' && useOllama(config)) break; // модель в Ollama качается ниже
     if (items.length) report({ stage, title: STAGES[stage], progress: 1, done: true });
     await onStageDone(stage, items.length > 0);
   }
-  if (!useOllama(config)) return;
+  if (!useOllama(config) || !stages.includes('brain')) return;
 
   // Языковая модель в Ollama
   try {
@@ -288,11 +331,26 @@ async function install({ config, modelsDir, report = () => {}, onStageDone = asy
     const noOllama = /ECONNREFUSED|fetch failed|timeout|aborted/i.test(String(err?.cause?.code || err?.message));
     report({
       stage: 'brain',
-      title: noOllama ? 'Не найден Ollama — установите его с ollama.com или выберите в настройках встроенный движок' : `Модель не загрузилась: ${err.message}`,
+      title: noOllama
+        ? 'Не найден Ollama — установите его с ollama.com или выберите в настройках встроенный движок'
+        : `Модель не загрузилась: ${err.message}`,
       error: true,
       needOllama: noOllama,
     });
   }
 }
 
-module.exports = { install, plan, missing, estimate, formatBytes, brainReady, ollamaHasModel, STAGES };
+module.exports = {
+  install,
+  plan,
+  missing,
+  estimate,
+  formatBytes,
+  brainReady,
+  remoteConfigured,
+  ollamaHasModel,
+  STAGES,
+  PART_TITLES,
+  FIRST_RUN,
+  ALL_STAGES,
+};

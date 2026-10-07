@@ -18,7 +18,12 @@ const QUICK = [
 const AGAIN = /^(ещё|еще|ещё раз|еще раз|больше|сильнее|и ещё|и еще)$/;
 
 function quick(text) {
-  const t = text.toLowerCase().replace(/ё/g, 'е').replace(/[^а-яa-z ]+/g, '').replace(/\s+/g, ' ').trim();
+  const t = text
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[^а-яa-z ]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   let key = null;
   let say = 'Есть.';
   for (const [re, k, phrase] of QUICK) {
@@ -35,7 +40,13 @@ function quick(text) {
   return { addressed: true, say, actions: [{ tool: 'media', arg: key }], silent: true };
 }
 
-const words = (s) => new Set(String(s).toLowerCase().split(/[^a-zа-яё0-9]+/).filter((w) => w.length > 2));
+const words = (s) =>
+  new Set(
+    String(s)
+      .toLowerCase()
+      .split(/[^a-zа-яё0-9]+/)
+      .filter((w) => w.length > 2),
+  );
 const sameTitle = (a, b) => {
   const A = words(a);
   return [...words(b)].filter((w) => A.has(w)).length >= Math.min(2, A.size);
@@ -60,7 +71,7 @@ async function playOnYoutube(query, ctx) {
 
   // Сначала останавливаем то, что уже играет, чтобы звуки не смешались
   const before = await media.sessions().catch(() => []);
-  for (const s of before.filter((s) => s.status === 'Playing')) await media.control('pause', s.app).catch(() => {});
+  for (const s of before.filter((x) => x.status === 'Playing')) await media.control('pause', s.app).catch(() => {});
 
   await ctx.openExternal(watchUrl(video.id));
 
@@ -85,8 +96,31 @@ async function ensurePlaying(video, ctx) {
 
 module.exports = {
   id: 'music',
+  needs: [],
   title: 'музыка и видео на YouTube, пауза, следующий трек, громче или тише, что играет',
-  keywords: ['музык', 'песн', 'трек', 'включи', 'поставь', 'ютуб', 'youtube', 'видео', 'клип', 'плеер', 'играет', 'пауз', 'громч', 'погромч', 'тиш', 'потиш', 'следующ', 'предыдущ', 'альбом', 'плейлист', 'послушать'],
+  keywords: [
+    'музык',
+    'песн',
+    'трек',
+    'включи',
+    'поставь',
+    'ютуб',
+    'youtube',
+    'видео',
+    'клип',
+    'плеер',
+    'играет',
+    'пауз',
+    'громч',
+    'погромч',
+    'тиш',
+    'потиш',
+    'следующ',
+    'предыдущ',
+    'альбом',
+    'плейлист',
+    'послушать',
+  ],
   speakable,
   quick,
   rules: [
@@ -101,7 +135,10 @@ module.exports = {
       arg: 'что искать на YouTube: исполнитель и название, жанр или тема видео',
       examples: [
         ['включи Кино группа крови', { addressed: true, say: 'Ставлю.', actions: [{ tool: 'youtube', arg: 'Кино Группа крови' }] }],
-        ['включи какую-нибудь спокойную музыку', { addressed: true, say: 'Сейчас.', actions: [{ tool: 'youtube', arg: 'спокойная музыка микс' }] }],
+        [
+          'включи какую-нибудь спокойную музыку',
+          { addressed: true, say: 'Сейчас.', actions: [{ tool: 'youtube', arg: 'спокойная музыка микс' }] },
+        ],
         ['поставь видео про чёрные дыры', { addressed: true, say: 'Ищу.', actions: [{ tool: 'youtube', arg: 'чёрные дыры научпоп' }] }],
       ],
       run: async (query, ctx) => playOnYoutube(query || 'популярная музыка микс', ctx),

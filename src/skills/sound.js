@@ -62,7 +62,11 @@ async function volume(arg) {
 
 // «громкость 30», «громкость на тридцать», «сделай громкость 50 процентов», «какая громкость»
 function quick(text) {
-  const t = text.toLowerCase().replace(/ё/g, 'е').replace(/[.,!?]/g, '').trim();
+  const t = text
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[.,!?]/g, '')
+    .trim();
   if (/^(какая|сколько) (сейчас )?громкост/.test(t)) return { addressed: true, say: '', actions: [{ tool: 'volume', arg: '?' }] };
   const m = t.match(/^(?:(?:поставь|сделай|установи) )?громкость (?:на )?(.+?)(?: процент[а-я]*)?$/);
   const n = m && wordsToNumber(m[1]);
@@ -72,6 +76,7 @@ function quick(text) {
 
 module.exports = {
   id: 'sound',
+  needs: [],
   platforms: ['win32'], // PowerShell и программы Windows
   title: 'громкость Windows точным числом, выключить или включить звук',
   keywords: ['громк', 'звук', 'тише', 'громче', 'погромч', 'потиш', 'mute', 'процент'],

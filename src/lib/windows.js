@@ -71,9 +71,25 @@ function pressMediaKey(name) {
 
 // Системные процессы и сам ассистент никогда не закрываются.
 const PROTECTED = new Set([
-  'explorer', 'dwm', 'winlogon', 'csrss', 'lsass', 'services', 'smss', 'wininit', 'svchost', 'system',
-  'sihost', 'shellexperiencehost', 'startmenuexperiencehost', 'searchhost', 'textinputhost', 'ctfmon',
-  'applicationframehost', 'lockapp', 'electron',
+  'explorer',
+  'dwm',
+  'winlogon',
+  'csrss',
+  'lsass',
+  'services',
+  'smss',
+  'wininit',
+  'svchost',
+  'system',
+  'sihost',
+  'shellexperiencehost',
+  'startmenuexperiencehost',
+  'searchhost',
+  'textinputhost',
+  'ctfmon',
+  'applicationframehost',
+  'lockapp',
+  'electron',
 ]);
 
 // Программы с видимыми окнами: [{ id, name, title, description }]
@@ -111,7 +127,15 @@ function minimizeAll() {
 }
 
 // Браузер по умолчанию → имя процесса
-const BROWSERS = { chrome: 'chrome', msedge: 'msedge', firefox: 'firefox', yandex: 'browser', opera: 'opera', brave: 'brave', vivaldi: 'vivaldi' };
+const BROWSERS = {
+  chrome: 'chrome',
+  msedge: 'msedge',
+  firefox: 'firefox',
+  yandex: 'browser',
+  opera: 'opera',
+  brave: 'brave',
+  vivaldi: 'vivaldi',
+};
 async function defaultBrowserProcess() {
   const progId = (
     await powershell(

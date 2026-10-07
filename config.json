@@ -16,7 +16,7 @@
       "орион",
       "orion"
     ],
-    "ttsSteps": 12,
+    "ttsSteps": 16,
     "vadThreshold": 0.3
   },
   "discoverApps": true,
@@ -65,6 +65,28 @@
   "skills": {
     "delegate": {
       "enabled": true
+    },
+    "smarthome": {
+      "enabled": true
+    },
+    "rates": {
+      "enabled": true
+    },
+    "notes": {
+      "enabled": true
+    },
+    "web": {
+      "enabled": true
     }
-  }
+  },
+  "backend": "llamacpp",
+  "llmIdleMinutes": 10,
+  "brainOffer": true,
+  "cloud": {
+    "enabled": false
+  },
+  "remote": {
+    "type": "openai"
+  },
+  "escalate": true
 }
