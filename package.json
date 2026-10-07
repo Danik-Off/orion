@@ -1,7 +1,7 @@
 {
   "name": "orion",
   "productName": "Orion",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Орион — локальный голосовой ассистент в духе джарвис. на Electron + Ollama,максимально простой и удобный в использовании. Поддержка русского языка.",
   "author": {
@@ -30,6 +30,8 @@
     "wake-eval": "node scripts/wake-eval.js",
     "router-dataset": "node scripts/router-dataset.js",
     "router-eval": "node scripts/router-eval.js",
+    "router-anonymize": "node scripts/router-anonymize.js",
+    "router-release": "node scripts/router-release.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
@@ -47,6 +49,8 @@
       "src/**/*",
       "config.json",
       "package.json",
+      "docs/models/orion-router/{NOTICE,GEMMA_TERMS.txt,PROHIBITED_USE_POLICY.txt}",
+      "update/*.md",
       "!**/node_modules/**/{README,CHANGELOG,HISTORY,AUTHORS}*",
       "!**/node_modules/**/*.{md,markdown,map,d.ts,d.mts,d.cts,ts}",
       "!**/node_modules/**/{test,tests,__tests__,docs,doc,example,examples,.github}/**"

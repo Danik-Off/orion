@@ -39,6 +39,12 @@ for (const file of files) {
     phrases.add(s);
   }
 }
+// Что нового по версиям (update/*.md) — Орион зачитывает их голосом
+const notes = require('../src/lib/release-notes');
+for (const v of notes.versions()) {
+  const n = notes.read(v);
+  for (const s of [n.intro, ...n.items]) if (s) phrases.add(s);
+}
 const list = [...phrases].sort();
 if (process.argv.includes('--json')) {
   process.stdout.write(`${JSON.stringify(list, null, 1)}\n`);

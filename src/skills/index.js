@@ -26,6 +26,7 @@ module.exports = [
   require('./news'),
   require('./briefing'),
   require('./journal'),
+  require('./updates'),
   require('./facts'),
   require('./steam'),
   require('./smarthome'),

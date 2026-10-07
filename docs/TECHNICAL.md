@@ -426,8 +426,10 @@ Qwen фраз на каждый инструмент, разговорные ф�
 
 ```
 npm run router-dataset -- --backend llamacpp --generate 15 --chat 150 --relabel   # ~25 мин; кэш в data/router
-%USERPROFILE%\.orion-train\Scripts\python scripts/router-train.py --epochs 6 --batch 16 --accum 1   # ~4 мин на RTX 5070
+npm run router-anonymize -- --city <ваш город> --name <ваше имя>   # личное из журнала → другие значения
+%USERPROFILE%\.orion-train\Scripts\python scripts/router-train.py --data data/router-public --epochs 6 --batch 16 --accum 1   # ~4 мин на RTX 5070
 npm run router-eval -- --model orion-router-q8_0.gguf
+npm run router-release   # папка релиза: модель, NOTICE, условия Gemma, карточка; -- --publish — выложить (gh auth login)
 npm run eval -- --config test/fixtures/config.json --router orion-router-q8_0.gguf   # весь путь
 ```
 
@@ -435,6 +437,12 @@ npm run eval -- --config test/fixtures/config.json --router orion-router-q8_0.gg
 инструментов в запрос не идут (дообученная знает их сама); для исходной FunctionGemma — идут (`router.toolsInPrompt`).
 Добавили навык — пересоберите набор с `--generate` и дообучите: без этого новый инструмент Gemma не знает
 и передаёт такие фразы Qwen (это безопасно, просто медленнее). Фразы из `test/fixtures/eval-*.json` в обучение не попадают.
+
+**Публикация.** Модель — производная Gemma: выкладывается только вместе с копией Gemma Terms of Use, файлом NOTICE
+и пометкой об изменении (`docs/models/orion-router/`, карточка модели — там же). Обучать публикуемую модель —
+на наборе после `router-anonymize`: веса запоминают частые слова, и без замены модель «знала» бы город и имя
+автора журнала. Скачанный файл Орион сверяет с `sha256` в `src/core/llama.js` — после нового выпуска впишите
+сумму, которую печатает `router-release`. Релиз не помечается последним: по последнему ищет обновления сам Орион.
 
 
 **Видеопамять.** Qwen выгружается после `llmIdleMinutes` (10) минут без запросов. Как только в промежуточном

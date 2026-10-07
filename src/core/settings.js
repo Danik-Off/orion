@@ -49,6 +49,7 @@ const FIELDS = {
   'cloud.enabled': { check: bool, live: true },
   'cloud.ask': { check: bool, live: true },
   brainOffer: { check: bool, live: true },
+  lastVersion: { check: (v) => (/^\d+\.\d+\.\d+$/.test(String(v)) ? String(v) : undefined), live: true }, // навык updates: с какой версии обновились
   // Маленькая модель (быстрые команды) и разбор большой
   'router.enabled': { check: bool, live: true },
   'router.collect': { check: bool, live: true },

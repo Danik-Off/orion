@@ -95,3 +95,32 @@ test('установка: первый запуск — голос, слух и 
   assert.equal(remoteConfigured({ remote: { type: 'openai', baseUrl: '', model: 'm' } }), false);
   return brainReady({ ...base, backend: 'none' }, '/m').then((r) => assert.equal(r, false));
 });
+
+test('загрузка модели: контрольная сумма сходится — файл остаётся, нет — удаляется, загрузка не засчитана', async () => {
+  const http = require('node:http');
+  const crypto = require('node:crypto');
+  const { installItem } = require('../src/core/setup');
+  const body = Buffer.from('gguf'.repeat(1000));
+  const server = http.createServer((_req, res) => res.end(body));
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const url = `http://127.0.0.1:${server.address().port}/m.gguf`;
+  const dir = tmp('orion-sha-');
+  try {
+    const good = {
+      name: 'm.gguf',
+      url,
+      target: path.join(dir, 'good.gguf'),
+      sha256: crypto.createHash('sha256').update(body).digest('hex'),
+    };
+    await installItem(good, dir, () => {});
+    assert.ok(fs.existsSync(good.target));
+    const bad = { ...good, target: path.join(dir, 'bad.gguf'), sha256: '0'.repeat(64) };
+    await assert.rejects(
+      installItem(bad, dir, () => {}),
+      /повреждён/,
+    );
+    assert.equal(fs.existsSync(bad.target), false, 'битый файл не остаётся — следующий запуск скачает заново');
+  } finally {
+    server.close();
+  }
+});

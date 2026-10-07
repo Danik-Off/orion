@@ -853,6 +853,13 @@ peopleBtn.addEventListener('click', async () => {
 
 // --- Напоминания, горячая клавиша, кнопки --------------------------------------------
 
+// Орион говорит сам (например, что нового после обновления)
+window.jarvis.onAnnounce((text) => {
+  addMsg('bot', text);
+  caption.textContent = text;
+  speak(text);
+});
+
 window.jarvis.onRemind((text) => {
   addMsg('bot', `⏰ ${text}`);
   caption.textContent = `⏰ ${text}`;

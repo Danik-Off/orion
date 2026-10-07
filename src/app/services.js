@@ -71,6 +71,12 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
     if (Notification.isSupported()) new Notification({ title: `${config.name} — напоминание`, body: text }).show();
   }
 
+  // Сказать что-то самому, без вопроса (рассказ после обновления): реплика в окне и голосом
+  function say(text) {
+    if (ui.mode() === 'hidden') ui.setMode('orb');
+    ui.send('jarvis:announce', String(text));
+  }
+
   // Возможности ядра, которые получают навыки (контракт — в core/skills.js)
   const { shell, clipboard } = electron;
   const ctx = {
@@ -80,6 +86,7 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
     llm,
     confirm,
     remind,
+    say,
     audit,
     openExternal: (url) => shell.openExternal(url),
     openPath: (p) => shell.openPath(p),

@@ -71,6 +71,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   micReset: () => ipcRenderer.send('jarvis:mic-reset'),
   setListening: (on) => ipcRenderer.send('jarvis:listening', on === true), // «жду вас»: слушать без детектора речи
   synth: (text) => ipcRenderer.invoke('jarvis:synth', String(text)),
+  onAnnounce: (cb) => ipcRenderer.on('jarvis:announce', (_e, text) => cb(String(text))),
   onRemind: (cb) => ipcRenderer.on('jarvis:remind', (_e, text) => cb(String(text))),
   onSessionEnd: (cb) => ipcRenderer.on('jarvis:session-end', (_e, reason) => cb(String(reason || ''))), // разговор забыт — стереть реплики
   onToggleMic: (cb) => ipcRenderer.on('jarvis:toggle-mic', () => cb()),

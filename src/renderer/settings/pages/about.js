@@ -22,5 +22,19 @@ export default {
         action('Перезапустить', ({ api }) => api.restart(), { button: 'Перезапустить' }),
       ],
     },
+    {
+      title: 'Модели',
+      rows: [
+        // Условия Gemma (раздел 3.1): получатель модели должен знать об условиях и ограничениях использования
+        action('Быстрая модель основана на Gemma', ({ api }) => api.openLink('https://ai.google.dev/gemma/terms'), {
+          button: 'Условия',
+          hint: 'FunctionGemma 270M от Google, дообученная для Ориона. Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms.',
+        }),
+        action('Запрещённые способы использования', ({ api }) => api.openLink('https://ai.google.dev/gemma/prohibited_use_policy'), {
+          button: 'Открыть',
+          hint: 'Пользуясь быстрой моделью, вы соглашаетесь их соблюдать.',
+        }),
+      ],
+    },
   ],
 };

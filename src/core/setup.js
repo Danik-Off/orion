@@ -6,6 +6,7 @@
 //   brain   — большая языковая модель (Qwen, ~2,7 ГБ, или модель в Ollama) — только по согласию:
 //             после первой установки ассистент предлагает её сам, позже — кнопка в настройках.
 // Первый запуск ставит FIRST_RUN. Используется приложением и командой `npm run models`.
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { Readable, Transform } = require('node:stream');
@@ -68,12 +69,14 @@ function plan(config, modelsDir) {
   if (config.router?.enabled) {
     items.push(engine('router'));
     const r = llama.paths({ ...config, model: config.router.model }, modelsDir);
-    if (r.ggufUrl) items.push({ stage: 'router', name: path.basename(r.gguf), url: r.ggufUrl, target: r.gguf, size: r.size });
+    if (r.ggufUrl)
+      items.push({ stage: 'router', name: path.basename(r.gguf), url: r.ggufUrl, target: r.gguf, size: r.size, sha256: r.sha256 });
   }
   // Большая модель на этом компьютере. В Ollama её качает сам Ollama (см. install), внешней качать нечего
   if (config.backend === 'llamacpp') {
     if (!config.router?.enabled) items.push(engine('brain'));
-    if (l.ggufUrl) items.push({ stage: 'brain', name: path.basename(l.gguf), url: l.ggufUrl, target: l.gguf, size: l.size });
+    if (l.ggufUrl)
+      items.push({ stage: 'brain', name: path.basename(l.gguf), url: l.ggufUrl, target: l.gguf, size: l.size, sha256: l.sha256 });
   }
   return items;
 }
@@ -129,6 +132,13 @@ function unpackLlama(archiveFile, unpackTo) {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
+// Контрольная сумма файла (sha256) — потоком: модели весят сотни мегабайт
+async function sha256Of(file) {
+  const hash = crypto.createHash('sha256');
+  await pipeline(fs.createReadStream(file), hash);
+  return hash.digest('hex');
+}
+
 async function installItem(item, modelsDir, onProgress) {
   const tmp = item.archive ? path.join(modelsDir, path.basename(new URL(item.url).pathname)) : item.target;
   for (let attempt = 1; ; attempt++) {
@@ -139,6 +149,12 @@ async function installItem(item, modelsDir, onProgress) {
       if (attempt >= 4) throw err;
       await new Promise((r) => setTimeout(r, 2000 * attempt));
     }
+  }
+  // Известна сумма (свои модели из релизов GitHub) — битый или подменённый файл не запускаем.
+  // Не перекачиваем: несовпадение скорее значит, что файл на сервере другой, — повтор качал бы его же
+  if (item.sha256 && (await sha256Of(tmp)) !== item.sha256) {
+    fs.rmSync(tmp, { force: true });
+    throw new Error(`${item.name}: файл повреждён или не той версии`);
   }
   if (!item.archive) return;
   if (item.unpackTo) unpackLlama(tmp, item.unpackTo);
@@ -342,6 +358,7 @@ async function install({ config, modelsDir, stages = FIRST_RUN, report = () => {
 
 module.exports = {
   install,
+  installItem,
   plan,
   missing,
   estimate,

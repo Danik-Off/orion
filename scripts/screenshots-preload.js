@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   setListening: () => {},
   synth: none,
   onRemind: on('remind'),
+  onAnnounce: on('announce'),
   onSessionEnd: on('sessionEnd'),
   onToggleMic: on('toggleMic'),
   onHeard: on('heard'),

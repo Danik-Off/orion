@@ -19,6 +19,8 @@ const MODELS = {
     url: 'https://github.com/Danik-Off/orion/releases/download/models-router-v1/orion-router-q8_0.gguf',
     file: 'orion-router-q8_0.gguf',
     size: 2.92e8,
+    // Скачанный файл сверяется с этой суммой (npm run router-release печатает её для нового файла)
+    sha256: '54512c0228b9de42c4668dfb450e9d70e6d309e1a79d55e5de8a185995f12578',
   },
   // Исходная FunctionGemma — для дообучения и сравнения; ей нужны описания инструментов
   'functiongemma:270m': { repo: 'unsloth/functiongemma-270m-it-GGUF', file: 'functiongemma-270m-it-Q8_0.gguf', size: 2.92e8, tools: true },
@@ -46,6 +48,7 @@ function paths(config, modelsDir) {
     gguf: path.join(modelsDir, 'llm', file),
     ggufUrl: known && (known.url || `https://huggingface.co/${known.repo}/resolve/main/${known.file}`),
     size: known?.size,
+    sha256: known?.sha256,
   };
 }
 

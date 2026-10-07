@@ -38,6 +38,7 @@
 //               «Нашёл Claude Code — передавать ему сложные задачи?»
 //
 // ctx — то, чем ядро делится с навыками: config, dataDir, llm, confirm (true/false; null — не ответили),
+//   say(text) — сказать самому, без вопроса (в окне и голосом),
 //   saveSettings(patch) — записать настройку в config.json (как окно настроек), remind, openExternal, openPath,
 //   showItemInFolder, clipboard, audit, perform(text, request) — выполнить фразу как команду (для сценариев), а также
 //   memory — база знаний ТЕКУЩЕГО собеседника (у каждого голоса своя; у гостя — только чтение пустой),

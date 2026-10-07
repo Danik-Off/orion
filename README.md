@@ -155,7 +155,7 @@
 
 Electron; речь — [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (распознавание Zipformer, голос Supertonic 3,
 узнавание голоса CAM++, ударения — [silero-stress](https://github.com/snakers4/silero-stress), перенесённый на JS);
-языковая модель — Qwen3.5-4B во встроенном [llama.cpp](https://github.com/ggml-org/llama.cpp).
+языковые модели — дообученная FunctionGemma 270M и Qwen3.5-4B во встроенном [llama.cpp](https://github.com/ggml-org/llama.cpp).
 Навык — это один файл: описание для модели, примеры и функция `run`. Добавить свой навык несложно.
 
 ```bash
@@ -168,3 +168,12 @@ npm run eval       # точность понимания на контрольн
 
 - [Техническое описание](docs/TECHNICAL.md) — как всё устроено: ключевое слово, узнавание голоса, память, промпт, навыки.
 - [Сборка и выпуск версий](docs/RELEASING.md) — CI/CD на GitHub Actions, установщики для трёх ОС, автообновление.
+- [Быстрая модель orion-router](docs/models/orion-router/README.md) — карточка модели, дообучение, выпуск.
+
+## Модели и их условия
+
+Быстрая модель — [FunctionGemma 270M](https://huggingface.co/google/functiongemma-270m-it) от Google, дообученная
+для Ориона. Gemma is provided under and subject to the Gemma Terms of Use found at
+[ai.google.dev/gemma/terms](https://ai.google.dev/gemma/terms). Пользуясь ею, вы соглашаетесь соблюдать
+[запрещённые способы использования Gemma](https://ai.google.dev/gemma/prohibited_use_policy). Копия условий и
+NOTICE — в [docs/models/orion-router](docs/models/orion-router). Большая модель — [Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B), её условия — на странице модели.
