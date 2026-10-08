@@ -91,13 +91,12 @@ const MODELS = {
   // Маленькая модель вызова функций (core/router.js), дообученная под навыки Ориона (scripts/router-train.py):
   // инструменты знает наизусть. Скачивается при первом запуске — с ней Орион выполняет команды без большой модели
   'orion-router': {
-    url: 'https://github.com/Danik-Off/orion/releases/download/models-router-v1/orion-router-q8_0.gguf',
+    url: 'https://github.com/Danik-Off/orion/releases/download/models-router-v2/orion-router-q8_0.gguf',
     file: 'orion-router-q8_0.gguf',
     size: 2.92e8,
     internal: true, // своя внутренняя модель первой ступени — в списке больших моделей не показывается
-    system: true, // v1 обучена со строкой FunctionGemma в запросе (core/router.js → withSystem)
     // Скачанный файл сверяется с этой суммой (npm run router-release печатает её для нового файла)
-    sha256: '54512c0228b9de42c4668dfb450e9d70e6d309e1a79d55e5de8a185995f12578',
+    sha256: '1914e12408becaf48ec78a7c3594bc8631be98821ed86c4c186ec89d08fded5a',
   },
   // Исходная FunctionGemma — для дообучения и сравнения; ей нужны описания инструментов
   'functiongemma:270m': {

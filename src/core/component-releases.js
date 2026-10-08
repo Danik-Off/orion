@@ -26,6 +26,16 @@ function newestInFamily(assets, current) {
 
 const ROUTER_TAG = /^models-router-v(\d+)$/;
 const routerVersion = (tag) => Number(String(tag).match(ROUTER_TAG)?.[1] || 0);
+// Без отметки router.release модель ставилась до того, как отметку начали писать, — это v1
+const LEGACY_ROUTER_TAG = 'models-router-v1';
+
+// Версия маленькой модели, которая сейчас стоит: router.version (свой файл, замер) или номер из тега её релиза.
+// От неё зависит, какие навыки она знает (router: N в навыке) и нужна ли ей строка FunctionGemma в запросе
+function installedRouterVersion(config) {
+  const r = config?.router || {};
+  if (Number.isFinite(r.version)) return r.version;
+  return routerVersion(r.release || LEGACY_ROUTER_TAG) || 1;
+}
 
 // Релизы проекта → самая новая модель orion-router новее current: { tag, url, sumsUrl, size } или null
 function newestRouter(releases, current, file = 'orion-router-q8_0.gguf') {
@@ -51,4 +61,4 @@ const shaFor = (sums, file) =>
     .map((l) => l.trim().split(/\s+\*?/))
     .find(([, name]) => name === file)?.[0] || null;
 
-module.exports = { familyOf, dateOf, newestInFamily, newestRouter, routerVersion, shaFor };
+module.exports = { familyOf, dateOf, newestInFamily, newestRouter, routerVersion, installedRouterVersion, LEGACY_ROUTER_TAG, shaFor };

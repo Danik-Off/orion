@@ -8,7 +8,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { download, installItem, sha256Of: sha256 } = require('../core/setup');
-const { newestInFamily, newestRouter, routerVersion, shaFor, familyOf, dateOf } = require('../core/component-releases');
+const { newestInFamily, newestRouter, routerVersion, shaFor, familyOf, dateOf, LEGACY_ROUTER_TAG } = require('../core/component-releases');
 const { MODELS } = require('../core/llama');
 const { latestVersion } = require('./mcp-packages');
 
@@ -16,7 +16,6 @@ const SHERPA_API = 'https://api.github.com/repos/k2-fsa/sherpa-onnx/releases/tag
 const ORION_API = 'https://api.github.com/repos/Danik-Off/orion/releases?per_page=30';
 const CHECK_EVERY = 12 * 3600_000; // при запуске — не чаще (лимит GitHub без ключа — 60 запросов в час)
 const ROUTER_FILE = MODELS['orion-router'].file;
-const ROUTER_DEFAULT_TAG = MODELS['orion-router'].url.split('/').at(-2); // models-router-v1
 
 async function github(url) {
   const res = await fetch(url, {
@@ -102,7 +101,7 @@ function createUpdatesManager({ config, modelsDir, services, settings, ipc, voic
 
   // --- быстрая модель orion-router ---
   const llmDir = path.join(modelsDir, 'llm');
-  const routerTag = () => config.router?.release || ROUTER_DEFAULT_TAG;
+  const routerTag = () => config.router?.release || LEGACY_ROUTER_TAG;
   const prevRouter = path.join(llmDir, ROUTER_FILE.replace(/\.gguf$/, '.prev.gguf'));
   const router = {
     id: 'router',
@@ -134,6 +133,7 @@ function createUpdatesManager({ config, modelsDir, services, settings, ipc, voic
         fs.renameSync(prevRouter, current);
         throw new Error(`Новая модель не запустилась (${String(err?.message || err).slice(0, 80)}) — оставил прежнюю`);
       }
+      settings.setPath(['router', 'previous'], routerTag()); // откат вернёт и отметку версии
       settings.setPath(['router', 'release'], n.tag);
     },
     previous: () => (fs.existsSync(prevRouter) ? 'прежняя' : null),
@@ -141,7 +141,8 @@ function createUpdatesManager({ config, modelsDir, services, settings, ipc, voic
       if (!fs.existsSync(prevRouter)) throw new Error('Прежней версии нет');
       services.routerServer.stop();
       fs.renameSync(prevRouter, path.join(llmDir, ROUTER_FILE));
-      settings.setPath(['router', 'release'], undefined);
+      settings.setPath(['router', 'release'], config.router?.previous || undefined);
+      settings.setPath(['router', 'previous'], undefined);
     },
   };
 

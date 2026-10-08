@@ -1,8 +1,10 @@
 // Установка: первый запуск (голос, слух, быстрые команды), затем предложение «стать умнее» — большая модель,
 // и докачка любых частей позже — из настроек.
 const { install, missing, estimate, formatBytes, brainReady, FIRST_RUN, ALL_STAGES, PART_TITLES } = require('../core/setup');
+const { MODELS } = require('../core/llama');
 
-function createSetupFlow({ config, modelsDir, services, ui, voice, ipc }) {
+// saveRouterRelease(tag) — после загрузки orion-router запомнить, какая версия скачана (от неё зависят промпт и навыки)
+function createSetupFlow({ config, modelsDir, services, ui, voice, ipc, saveRouterRelease = () => {} }) {
   const { audit, llama, assistant } = services;
   let answerOffer = null;
   let answerBrain = null;
@@ -35,6 +37,8 @@ function createSetupFlow({ config, modelsDir, services, ui, voice, ipc }) {
             await voice.ready;
             voice.reload(); // подключить только что скачанное
           }
+          if (changed && stage === 'router' && config.router?.model === 'orion-router')
+            saveRouterRelease(MODELS['orion-router'].url.split('/').at(-2));
           if (changed && stage === 'brain') {
             if (config.backend === 'llamacpp') await llama.restart().catch(() => {}); // модель только что скачана
             assistant.warmup();

@@ -16,6 +16,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { MODELS } = require('./llama');
+const { installedRouterVersion } = require('./component-releases');
 
 // Строка, которой FunctionGemma учили объявлять функции (без неё исходная хуже вызывает инструменты).
 // Дообученной она не нужна: запрос — одна фраза, без системного промпта (router.system: false; так короче и быстрее)
@@ -66,8 +67,8 @@ function createRouter({ config, server, skills, audit = () => {}, dataDir }) {
   const cfg = () => ({ ...DEFAULTS, ...config.router });
   // Описания инструментов в запросе: нужны исходной модели (известное имя из core/llama.js), не нужны дообученной (свой .gguf)
   const toolsInPrompt = () => cfg().toolsInPrompt ?? Boolean(MODELS[cfg().model]?.tools);
-  // Системная строка: исходной модели — да; дообученной — как она обучена (MODELS[...].system, иначе без неё)
-  const withSystem = () => cfg().system ?? (toolsInPrompt() || MODELS[cfg().model]?.system === true);
+  // Системная строка: исходной модели — да; orion-router v1 обучена с ней, с v2 запрос — одна фраза
+  const withSystem = () => cfg().system ?? (toolsInPrompt() || (cfg().model === 'orion-router' && installedRouterVersion(config) < 2));
 
   const dataFile = dataDir && path.join(dataDir, 'router-data.jsonl');
 

@@ -1,7 +1,7 @@
 {
   "name": "orion",
   "productName": "Orion",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "Орион — локальный голосовой ассистент в духе джарвис. на Electron + Ollama,максимально простой и удобный в использовании. Поддержка русского языка.",
   "author": {

@@ -63,6 +63,9 @@ async function bench({ files = {}, releases = {}, reloadOk = () => true, routerS
     const u = String(url);
     const key = Object.keys(releases).find((k) => u.includes(k));
     if (key) return { ok: true, json: async () => releases[key](base) };
+    // Остальной GitHub — пустой: настоящие релизы не должны влиять на тест (после выхода models-router-v2
+    // тест «видел» её и насчитывал лишнее обновление)
+    if (u.includes('api.github.com')) return { ok: true, json: async () => (u.includes('/tags/') ? { assets: [] } : []) };
     return realFetch(url, ...rest);
   };
   const modelsDir = tmp();

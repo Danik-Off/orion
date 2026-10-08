@@ -52,6 +52,8 @@
 //   call(tool, arg) — вызвать инструмент другого навыка (например, музыка → программы).
 // request — { text } исходная фраза пользователя.
 
+const { installedRouterVersion } = require('./component-releases');
+
 const MAX_SELECTED = 4; // навыков с полным описанием в одном запросе (не считая always)
 const CHAT_TOPIC = 'chat'; // тема «просто разговор» — без навыков
 
@@ -78,13 +80,6 @@ function keywordScore(skill, text, words) {
 function compactPlan({ actions = [], say = '' }) {
   const acts = actions.map((a) => `${a.tool}(${JSON.stringify(a.arg)})`);
   return [...acts, say && `ответ «${say}»`].filter(Boolean).join(' + ') || 'без действий';
-}
-
-// Версия маленькой модели: router.version (свой файл, замер) или номер из тега её релиза (models-router-v2 → 2)
-function routerVersion(config) {
-  const r = config?.router || {};
-  if (Number.isFinite(r.version)) return r.version;
-  return Number(String(r.release || 'models-router-v1').match(/v(\d+)$/)?.[1] || 1);
 }
 
 // Навык подходит этой ОС: без списка platforms — подходит всем
@@ -225,7 +220,7 @@ function createSkillRegistry(skills, { config, ctx, audit, platform = process.pl
   // Такие фразы маленькая модель не берёт: она схватила бы похожий знакомый инструмент (радио → YouTube)
   const unknownToRouter = (id) => {
     const r = byId.get(id).router;
-    return !!byId.get(id).mcp || r === false || (typeof r === 'number' && routerVersion(config) < r);
+    return !!byId.get(id).mcp || r === false || (typeof r === 'number' && installedRouterVersion(config) < r);
   };
   function external(text) {
     const ranked = scores(text).filter((x) => x.words >= 1);

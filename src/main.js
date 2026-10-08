@@ -70,7 +70,15 @@ const services = createServices({ config, dataDir, modelsDir, ui, electron, save
 const voice = createVoice({ app, config, modelsDir, dataDir, services, ui, ipc });
 createAsk({ config, services, voice, ui, ipc });
 // Ход установки — в оба окна: полоской в разговоре и в разделе «Компоненты» настроек
-const setup = createSetupFlow({ config, modelsDir, services, voice, ui: { send: ipc.broadcast }, ipc });
+const setup = createSetupFlow({
+  config,
+  modelsDir,
+  services,
+  voice,
+  ui: { send: ipc.broadcast },
+  ipc,
+  saveRouterRelease: (tag) => settings.setPath(['router', 'release'], tag),
+});
 const registerHotkey = createHotkey({ globalShortcut, config, ui });
 // Ключи API и токены серверов MCP — в файле зашифрованы средствами системы (core/secrets.js). Расшифровка — когда
 // приложение готово (на Linux хранилище ключей доступно только тогда) и до запуска серверов MCP, которым они нужны;
