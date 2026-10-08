@@ -80,13 +80,22 @@ async function main() {
   if (!flag('--quick')) skills.quickPlan = () => null;
   if (flag('--all')) skills.select = () => registry.ids();
 
-  // --router файл.gguf — весь путь: маленькая модель → узкий промпт → большая (по умолчанию — только большая)
+  // --router файл.gguf — весь путь: маленькая модель → узкий промпт → большая (по умолчанию — только большая);
+  // --router-version N — для навыков с router: N; --system / --no-system — строка FunctionGemma в запросе
   let router = null;
   const stages = {};
   if (argv.includes('--router')) {
     const { createRouter } = require('../src/core/router');
     const model = argv[argv.indexOf('--router') + 1];
-    config.router = { ...config.router, enabled: true, collect: false, model };
+    config.router = {
+      ...config.router,
+      enabled: true,
+      collect: false,
+      model,
+      // Версия модели для навыков с router: N (свой файл .gguf); строка FunctionGemma в запросе — как у router-eval
+      version: argv.includes('--router-version') ? Number(argv[argv.indexOf('--router-version') + 1]) : config.router.version,
+      system: flag('--system') ? true : flag('--no-system') ? false : undefined,
+    };
     const routerServer = createLlamaServer({
       config: { ...config, model, numCtx: 2048, llamaCpp: { ...config.llamaCpp, gpuLayers: config.router.gpuLayers, slots: 1 } },
       modelsDir: path.resolve(root, config.speech.modelsDir || 'models'),

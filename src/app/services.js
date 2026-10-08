@@ -103,6 +103,7 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
   // active — станция выбрана (играет или на паузе); подписчики (мини-плеер) узнают о каждом изменении
   let radioState = { playing: false, active: false, name: '', url: '', volume: config.radio?.volume ?? 0.8 };
   const radioListeners = new Set();
+  let radioPlayer = null;
   const radioChanged = (patch) => {
     radioState = { ...radioState, ...patch };
     for (const fn of radioListeners) fn(radioState);
@@ -123,6 +124,9 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
     next: () => skills.run('radio', 'другое'), // «другая станция» кнопкой — как голосом
     state: () => radioState,
     onChange: (fn) => (radioListeners.add(fn), () => radioListeners.delete(fn)),
+    // Мини-плеер (app/radio-player.js) подключается после ядра: «перенеси радио в правый верхний угол», «спрячь плеер»
+    setPlayer: (p) => (radioPlayer = p),
+    place: (where) => radioPlayer?.place(where) ?? false,
     report: (s) =>
       radioChanged({
         playing: s?.playing === true,

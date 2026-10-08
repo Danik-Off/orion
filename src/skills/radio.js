@@ -27,11 +27,33 @@ const cleanQuery = (q) =>
     .replace(/\s+(?:музык\S*)$/i, '')
     .trim();
 
+// «перенеси радио в правый верхний угол» → 'tr'; «спрячь плеер» → 'hide'; «покажи плеер радио» → 'show'
+const PLAYER = '(?:радио|плеер|плеер радио|радиоплеер|окно радио|окошко радио|мини плеер)';
+function playerPlace(t) {
+  if (new RegExp(`^(?:спрячь|скрой|убери|не показывай)(?: мне)? ${PLAYER}$`).test(t) && !/^убери радио$/.test(t)) return 'hide';
+  if (new RegExp(`^(?:покажи|верни)(?: мне)? ${PLAYER}$`).test(t) && /плеер|окн/.test(t)) return 'show';
+  const m = t.match(
+    new RegExp(
+      `^(?:перенеси|передвинь|перемести|поставь|сдвинь|отправь|двигай|убери)(?: мне)? ${PLAYER} (?:в|на) (.+?)(?: угол| уголок)?(?: экрана)?$`,
+    ),
+  );
+  if (!m) return null;
+  const top = /верх/.test(m[1]);
+  const bottom = /низ|нижн/.test(m[1]);
+  const left = /лев/.test(m[1]);
+  const right = /прав/.test(m[1]);
+  if ((top || bottom) && (left || right)) return (top ? 't' : 'b') + (left ? 'l' : 'r');
+  return null;
+}
+
 // «включи радио европа плюс», «поставь радио с джазом», «включи другое радио», «выключи радио» — без модели
 function quick(text, ctx) {
   const t = norm(text);
   const plan = (tool, arg) => ({ addressed: true, say: '', actions: [{ tool, arg }] });
   if (/^(выключи|останови|убери|хватит) радио$|^радио (выключи|стоп)$/.test(t)) return plan('radio_stop', '');
+  // Мини-плеер: «перенеси радио в правый верхний угол», «спрячь плеер» — раньше «поставь радио …», иначе угол стал бы станцией
+  const where = playerPlace(t);
+  if (where) return plan('radio_player', where);
   // Вопрос, а не просьба: перечислить, а не включать
   if (/^(?:какое|какие|какую) (?:радио|радиостанци\S*|станци\S*)(?: .*)? (?:можешь|умеешь|есть|знаешь|бывают)(?: .*)?$/.test(t))
     return plan('radio', LIST);
@@ -102,12 +124,13 @@ async function play(arg, ctx) {
 module.exports = {
   id: 'radio',
   needs: [],
-  router: false, // маленькая модель радио не знает (не было при обучении) — фразы о нём сразу большой
+  router: 2, // маленькая модель знает навык с orion-router v2; с v1 фразы о нём сразу у большой
   title: 'интернет-радио: станция по названию или жанру, другая станция, выключить',
-  keywords: ['радио', 'радиостанц', 'fm', 'эфир', /(?:другую|следующую) станци/],
+  keywords: ['радио', 'радиостанц', 'fm', 'эфир', 'плеер', /(?:другую|следующую) станци/],
   quick,
   rules: [
     'radio — радиостанция («Европа Плюс», «Маяк») или жанр («джаз», «металл», «для сна»). Конкретная песня или исполнитель — youtube.',
+    'Перенести, спрятать или показать мини-плеер радио — radio_player (угол: tr, tl, br, bl).',
     `«Другое радио», «следующая станция» — radio с «${NEXT}». Вопрос, какие станции есть или что можешь включить, — radio с «${LIST}» (ничего не включает).`,
   ],
   tools: [
@@ -122,6 +145,19 @@ module.exports = {
         ['а другую станцию можно', { addressed: true, say: '', actions: [{ tool: 'radio', arg: NEXT }] }],
       ],
       run: play,
+    },
+    {
+      name: 'radio_player',
+      use: 'мини-плеер радио: перенести в угол экрана, спрятать или показать',
+      arg: 'tr (правый верхний) | tl (левый верхний) | br (правый нижний) | bl (левый нижний) | hide | show',
+      argEnum: ['tr', 'tl', 'br', 'bl', 'hide', 'show'],
+      speaks: true,
+      examples: [['перенеси радио в правый верхний угол', { addressed: true, say: '', actions: [{ tool: 'radio_player', arg: 'tr' }] }]],
+      run: async (arg, ctx) => {
+        if (!ctx.radio?.place?.(arg)) return { ok: false, message: 'Плеером радио сейчас не управить, сэр.' };
+        const said = { hide: 'Спрятал плеер.', show: 'Плеер снова на экране, пока играет радио.' }[arg];
+        return { ok: true, speak: said || 'Перенёс.' };
+      },
     },
     {
       name: 'radio_stop',

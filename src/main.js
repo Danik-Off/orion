@@ -103,6 +103,7 @@ const radioPlayer = createRadioPlayer({
   audit: services.audit,
 });
 ipc.add(radioPlayer);
+services.radio.setPlayer(radioPlayer);
 ipc.on('jarvis:radio-control', (msg) => radioPlayer.control(msg));
 const mcp = createMcpManager({ config, dataDir, services, settings, ipc });
 const models = createModelManager({ config, modelsDir, services, settings, ipc, dialog: electron.dialog });

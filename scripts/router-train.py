@@ -122,8 +122,12 @@ def main():
     if a.init:
         # Веса из GGUF (q8_0) распаковываются в обычные float — дальше обучение как с исходной
         init = Path(a.init)
-        model = AutoModelForCausalLM.from_pretrained(str(init.parent), gguf_file=init.name, dtype=torch.float32, attn_implementation="eager")
-        model = model.to(torch.bfloat16)
+        packed = AutoModelForCausalLM.from_pretrained(str(init.parent), gguf_file=init.name, dtype=torch.float32)
+        # Модель из GGUF помечена как квантованная, и Trainer её не обучает — веса переносим в обычную
+        model = AutoModelForCausalLM.from_pretrained(BASE, dtype=torch.bfloat16, attn_implementation="eager")
+        missing, unexpected = model.load_state_dict(packed.state_dict(), strict=False)
+        print(f"Веса из GGUF: не хватило {len(missing)}, лишних {len(unexpected)}")
+        del packed
         print(f"Доучиваю: {init.name}")
     else:
         model = AutoModelForCausalLM.from_pretrained(BASE, dtype=torch.bfloat16, attn_implementation="eager")

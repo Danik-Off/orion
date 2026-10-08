@@ -182,8 +182,24 @@ function createRadioPlayer({ preload, html, config, radio, saveSettings, audit =
     return inside ? SIZE.height + 8 : 0;
   }
 
+  // Голосом: where — угол ('tr', 'tl', 'br', 'bl') на том экране, где плеер сейчас, или 'show' / 'hide'
+  function place(where) {
+    if (where === 'show' || where === 'hide') {
+      saveSettings({ 'radio.player.show': where === 'show' });
+      update(radio.state());
+      return true;
+    }
+    if (!['tr', 'tl', 'br', 'bl'].includes(where)) return false;
+    const d = win?.isVisible() ? screen.getDisplayMatching(win.getBounds()) : display();
+    saveSettings({ 'radio.player.corner': where, 'radio.player.display': d.id });
+    if (win?.isVisible()) win.setBounds(placeIn(d.workArea, where));
+    wake();
+    return true;
+  }
+
   return {
     control,
+    place,
     orbOffset,
     // Настройку «показывать плеер» поменяли
     refresh: () => update(radio.state()),

@@ -13,6 +13,7 @@
 //   --with-tools  — описания инструментов в каждом примере (для исходной FunctionGemma; router.toolsInPrompt: true)
 //   --data <папка> — папка данных Ориона; --backend llamacpp — движок большой модели, если Ollama не запущена
 //
+// data/router/manual.jsonl — примеры, написанные вручную (новые навыки): метка точная, учитель её не трогает.
 // Источники (каждая фраза — один раз): примеры навыков, журнал actions.log, router-data.jsonl (записи при работе),
 // сгенерированные и перефразированные фразы прошлых запусков (data/router/*.jsonl — кэш, повторно не генерируются).
 // Фразы контрольных наборов (test/fixtures/eval-*.json) в обучение не попадают — на них идёт замер.
@@ -110,7 +111,7 @@ async function main() {
       add(e.input, e.plan.actions, 'журнал');
   });
   readJsonl(path.join(dataDir, 'router-data.jsonl'), (e) => add(e.text, e.actions, 'запись'));
-  for (const name of ['generated', 'paraphrases', 'mcp']) readJsonl(cacheFile(name), (e) => add(e.text, e.actions || [], name));
+  for (const name of ['generated', 'paraphrases', 'mcp', 'manual']) readJsonl(cacheFile(name), (e) => add(e.text, e.actions || [], name));
 
   const teacher = createTeacher(config);
   const cache = (name, fresh) => {
@@ -128,10 +129,10 @@ async function main() {
   const labels = new Map();
   readJsonl(cacheFile('labels'), (e) => labels.set(norm(e.text), e.actions));
   // Просьбы к подключениям — всегда «передаю», учитель их не размечает
-  for (const p of plans.values()) if (p.source === 'mcp') p.labeled = true;
+  const fixed = (p) => p.source === 'mcp' || p.source === 'manual';
+  for (const p of plans.values()) if (fixed(p)) p.labeled = true;
   if (!flag('--relabel-all'))
-    for (const p of plans.values())
-      if (p.source !== 'mcp' && labels.has(norm(p.text))) ((p.actions = labels.get(norm(p.text))), (p.labeled = true));
+    for (const p of plans.values()) if (!fixed(p) && labels.has(norm(p.text))) ((p.actions = labels.get(norm(p.text))), (p.labeled = true));
   if (flag('--relabel') || flag('--relabel-all')) {
     const fresh = await relabel(teacher, plans, { all: flag('--relabel-all') });
     cache('labels', fresh);
@@ -333,7 +334,8 @@ async function keepKnown(file, config, skills, plans) {
   };
   // Только там, где и учитель назвал один знакомый ей инструмент: «передаю», несколько задач и новые навыки — не трогать
   const list = [...plans.values()].filter(
-    (p) => routable(p.text) && p.source !== 'mcp' && !p.quick && p.actions.length === 1 && known(p.actions[0].tool),
+    (p) =>
+      routable(p.text) && p.source !== 'mcp' && p.source !== 'manual' && !p.quick && p.actions.length === 1 && known(p.actions[0].tool),
   );
   let kept = 0;
   let changed = 0;
@@ -417,7 +419,7 @@ function cleanup(plans, skills) {
     }
     const skill = tool && skills.skillOf(tool);
     const info = skill && skills.skillInfo(skill);
-    if (info && !info.always && p.source !== 'пример' && !skills.scores(p.text).some((x) => x.id === skill)) {
+    if (info && !info.always && p.source !== 'пример' && p.source !== 'manual' && !skills.scores(p.text).some((x) => x.id === skill)) {
       plans.delete(key);
       n.words++;
     }

@@ -140,6 +140,21 @@ test('радио: «другое радио» — другая станция т
   }
 });
 
+test('мини-плеер радио голосом: «перенеси радио в верхний правый угол», «спрячь плеер»', async () => {
+  const q = (t) => radioSkill.quick(t)?.actions[0];
+  assert.deepEqual(q('перенеси радио в верхний правый угол'), { tool: 'radio_player', arg: 'tr' });
+  assert.deepEqual(q('передвинь плеер в левый нижний угол экрана'), { tool: 'radio_player', arg: 'bl' });
+  assert.deepEqual(q('поставь радио в верхний левый угол'), { tool: 'radio_player', arg: 'tl' }, 'угол — не станция');
+  assert.deepEqual(q('спрячь плеер'), { tool: 'radio_player', arg: 'hide' });
+  assert.deepEqual(q('убери радио'), { tool: 'radio_stop', arg: '' });
+  const placed = [];
+  const tool = radioSkill.tools.find((t) => t.name === 'radio_player');
+  const r = await tool.run('tr', { radio: { place: (w) => (placed.push(w), true) } });
+  assert.equal(r.ok, true);
+  assert.deepEqual(placed, ['tr']);
+  assert.equal((await tool.run('tr', { radio: {} })).ok, false);
+});
+
 test('мини-плеер радио: отпущенный — к ближайшему углу своего экрана', () => {
   const { cornerOf, placeIn, SIZE } = require('../src/app/radio-player');
   const area = { x: 0, y: 0, width: 1920, height: 1040 };
