@@ -1058,3 +1058,9 @@ body.mode-orb .caption {
 body.mode-orb .caption:empty {
   display: none;
 }
+
+/* Будильник: та же панель, что у подтверждения, надпись — крупнее */
+.alarm #alarm-label {
+  font-size: 15px;
+  color: var(--accent-2);
+}

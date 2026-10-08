@@ -1,6 +1,5 @@
 {
   "name": "Орион",
-  "city": "Липецк",
   "ollamaUrl": "http://127.0.0.1:11434",
   "model": "qwen3.5:4b",
   "think": false,
@@ -61,32 +60,5 @@
       ],
       "confirm": false
     }
-  },
-  "skills": {
-    "delegate": {
-      "enabled": true
-    },
-    "smarthome": {
-      "enabled": true
-    },
-    "rates": {
-      "enabled": true
-    },
-    "notes": {
-      "enabled": true
-    },
-    "web": {
-      "enabled": true
-    }
-  },
-  "backend": "llamacpp",
-  "llmIdleMinutes": 10,
-  "brainOffer": true,
-  "cloud": {
-    "enabled": false
-  },
-  "remote": {
-    "type": "openai"
-  },
-  "escalate": true
+  }
 }

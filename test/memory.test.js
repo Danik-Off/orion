@@ -11,7 +11,7 @@ test('память раздельная по людям; гость ничего
   const store = createMemory({ dir: tmp() });
   const dan = store.forPerson('p-dan');
   const ann = store.forPerson('p-ann');
-  dan.setProfile('city=Липецк');
+  dan.setProfile('city=Казань');
   dan.remember('Любит джаз');
   ann.remember('Любит классику');
   assert.match(dan.allFactsText(), /джаз/);
@@ -24,8 +24,8 @@ test('память раздельная по людям; гость ничего
   const mem = s2.forPerson('p-1');
   mem.remember('Живёт в Казани');
   assert.equal(weather.homeCity({ memory: mem, config: { city: 'Москва' } }), 'Казани');
-  mem.setProfile('city=Липецк');
-  assert.equal(weather.homeCity({ memory: mem, config: { city: 'Москва' } }), 'Липецк');
+  mem.setProfile('city=Казань');
+  assert.equal(weather.homeCity({ memory: mem, config: { city: 'Москва' } }), 'Казань');
   assert.equal((await skills.run('remember', 'Любит чай', { memory: mem })).ok, true);
   assert.match(mem.allFactsText(), /чай/);
 });
@@ -49,14 +49,14 @@ test('общая память: место и факты не о человеке
   const { skills, store } = makeRegistry();
   const dan = store.forPerson('p-dan');
   const req = { memory: dan };
-  assert.equal((await skills.run('remember_shared', 'city=Липецк', req)).ok, true);
+  assert.equal((await skills.run('remember_shared', 'city=Казань', req)).ok, true);
   assert.equal((await skills.run('remember_shared', 'Дома живёт кот Барсик', req)).ok, true);
   assert.equal((await skills.run('remember', 'Любит джаз', req)).ok, true);
-  assert.equal(store.shared.profile().city, 'Липецк');
+  assert.equal(store.shared.profile().city, 'Казань');
   assert.match(store.shared.allFactsText(), /Барсик/);
   assert.doesNotMatch(dan.allFactsText(), /Барсик/);
   // погода: у собеседника без города — город из общей памяти
-  assert.equal(weather.homeCity({ memory: store.forPerson('p-ann'), shared: store.shared, config: { city: 'Москва' } }), 'Липецк');
+  assert.equal(weather.homeCity({ memory: store.forPerson('p-ann'), shared: store.shared, config: { city: 'Москва' } }), 'Казань');
   // забыть: «#о1» — общий, описание — сначала личное, потом общее
   assert.equal((await skills.run('forget', 'барсик', req)).ok, true);
   assert.doesNotMatch(store.shared.allFactsText(), /Барсик/);

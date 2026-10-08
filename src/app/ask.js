@@ -53,17 +53,23 @@ function createAsk({ config, services, voice, ui, ipc }) {
     if (controller.signal.aborted) return finish(me, { cancelled: true }); // перебили, пока узнавали собеседника
     const src = SOURCES.includes(source) ? source : 'text';
     audit({ ask: text.trim(), source, person: person?.id ?? null });
+    // Замер для человека: сколько ждать первого звука ответа (первое предложение или «Сейчас поищу») и всего ответа
+    const t0 = Date.now();
+    let first = 0;
+    const mark = () => (first ||= Date.now() - t0);
     try {
       const stream = Number.isInteger(streamId);
       const result = await assistant.handle(text.trim(), {
         source: src,
         person,
         signal: controller.signal,
-        onSay: stream ? (part) => ui.send('jarvis:say-part', { id: streamId, text: part }) : undefined,
-        onFiller: stream ? (part) => ui.send('jarvis:filler', { id: streamId, text: part }) : undefined,
+        onSay: stream ? (part) => (mark(), ui.send('jarvis:say-part', { id: streamId, text: part })) : undefined,
+        onFiller: stream ? (part) => (mark(), ui.send('jarvis:filler', { id: streamId, text: part })) : undefined,
         beforeActions: src !== 'text' ? () => voice.untilQuiet(controller.signal) : undefined,
       });
       if (result.cancelled || controller.signal.aborted) return { cancelled: true };
+      const total = Date.now() - t0;
+      audit({ answered: total, first: first || total, stage: result.stage || (result.ignored ? 'не ему' : undefined) });
       if (!result.ignored) await voice.setPartner(person?.id ?? null);
       return { ...result, person: person?.id ?? null, speakerLabel: speakerLabel(personId, person) }; // окно запомнит, с кем идёт разговор
     } catch (err) {

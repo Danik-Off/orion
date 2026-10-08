@@ -33,12 +33,17 @@
 //   needs     — какие данные нужны узкому промпту навыка: 'now' (дата и время), 'person' (имя и обращение),
 //               'city' (где находится ассистент), 'facts' (что известно о собеседнике и общее); по умолчанию ['now']
 //   quick(text, ctx) → план или null — разбор частых фраз без модели (мгновенно)
+//   router: false — маленькая модель этого навыка не знает (появился после её обучения): фразы о нём сразу
+//               уходят большой модели (skills.external); router: N — знает с версии N orion-router (у кого стоит
+//               прежняя, фразы по-прежнему у большой)
 //   init(ctx) — подготовка при старте; может дополнить описание своих инструментов
 //   offer(ctx) — предложить что-то при запуске, когда всё установлено (вопрос через ctx.confirm):
 //               «Нашёл Claude Code — передавать ему сложные задачи?»
 //
 // ctx — то, чем ядро делится с навыками: config, dataDir, llm, confirm (true/false; null — не ответили),
-//   say(text) — сказать самому, без вопроса (в окне и голосом),
+//   say(text) — сказать самому, без вопроса (в окне и голосом), radio — { play(станция), stop(), state() } (радио в окне),
+//   ask(вопрос) → ответ строкой или null (свободный ответ голосом или текстом), startEnrollment() — мастер записи голоса,
+//   alarm({ id, label, radio }) — зазвонить будильником (окно звенит или включает радио, пока не выключат),
 //   saveSettings(patch) — записать настройку в config.json (как окно настроек), remind, openExternal, openPath,
 //   showItemInFolder, clipboard, audit, perform(text, request) — выполнить фразу как команду (для сценариев), а также
 //   memory — база знаний ТЕКУЩЕГО собеседника (у каждого голоса своя; у гостя — только чтение пустой),
@@ -73,6 +78,13 @@ function keywordScore(skill, text, words) {
 function compactPlan({ actions = [], say = '' }) {
   const acts = actions.map((a) => `${a.tool}(${JSON.stringify(a.arg)})`);
   return [...acts, say && `ответ «${say}»`].filter(Boolean).join(' + ') || 'без действий';
+}
+
+// Версия маленькой модели: router.version (свой файл, замер) или номер из тега её релиза (models-router-v2 → 2)
+function routerVersion(config) {
+  const r = config?.router || {};
+  if (Number.isFinite(r.version)) return r.version;
+  return Number(String(r.release || 'models-router-v1').match(/v(\d+)$/)?.[1] || 1);
 }
 
 // Навык подходит этой ОС: без списка platforms — подходит всем
@@ -111,6 +123,18 @@ function createSkillRegistry(skills, { config, ctx, audit, platform = process.pl
     }
     return added;
   }
+  // Убрать навык на ходу (удалили или выключили сервер MCP); replace — убрать и добавить заново (у сервера
+  // изменился список инструментов)
+  function remove(id) {
+    const skill = byId.get(id);
+    if (!skill) return false;
+    for (const tool of skill.tools || []) if (tools.get(tool.name)?.skill === id) tools.delete(tool.name);
+    enabled.splice(enabled.indexOf(skill), 1);
+    byId.delete(id);
+    return true;
+  }
+  const replace = (skill) => (remove(skill.id), add([skill]).length > 0);
+
   const skillsOf = (ids) => (ids ? ids.map((id) => byId.get(id)).filter(Boolean) : enabled);
   const toolsOf = (ids) => skillsOf(ids).flatMap((s) => s.tools || []);
 
@@ -195,6 +219,20 @@ function createSkillRegistry(skills, { config, ctx, audit, platform = process.pl
 
   // Навык, который слова фразы явно называют — подсказка, если модель ничего не сделала
   const likely = (text) => scores(text).find((x) => x.words >= 1 && byId.get(x.id).hint !== false)?.id || null;
+
+  // Фраза — про навык, которого маленькая модель не знает (сервер MCP или новый навык с router: false — его не было
+  // при её обучении), и его слова совпали не слабее, чем у любого знакомого ей навыка → id этого навыка.
+  // Такие фразы маленькая модель не берёт: она схватила бы похожий знакомый инструмент (радио → YouTube)
+  const unknownToRouter = (id) => {
+    const r = byId.get(id).router;
+    return !!byId.get(id).mcp || r === false || (typeof r === 'number' && routerVersion(config) < r);
+  };
+  function external(text) {
+    const ranked = scores(text).filter((x) => x.words >= 1);
+    const ext = ranked.find((x) => unknownToRouter(x.id));
+    const own = ranked.find((x) => !unknownToRouter(x.id));
+    return ext && (!own || ext.words >= own.words) ? ext.id : null;
+  }
 
   // Навык по имени (id, имя инструмента или слово из названия)
   function resolve(arg) {
@@ -284,6 +322,7 @@ function createSkillRegistry(skills, { config, ctx, audit, platform = process.pl
     scores,
     select,
     likely,
+    external,
     fallback,
     resolve,
     skillOf,
@@ -296,10 +335,12 @@ function createSkillRegistry(skills, { config, ctx, audit, platform = process.pl
     run,
     init,
     add,
+    remove,
+    replace,
     offer,
     CHAT_TOPIC,
     ids: () => enabled.map((s) => s.id),
   };
 }
 
-module.exports = { createSkillRegistry, compactPlan, supports, CHAT_TOPIC };
+module.exports = { createSkillRegistry, supports, CHAT_TOPIC };

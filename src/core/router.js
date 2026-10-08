@@ -17,7 +17,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { MODELS } = require('./llama');
 
-// Строка, которой FunctionGemma учили объявлять функции (без неё она хуже вызывает инструменты)
+// Строка, которой FunctionGemma учили объявлять функции (без неё исходная хуже вызывает инструменты).
+// Дообученной она не нужна: запрос — одна фраза, без системного промпта (router.system: false; так короче и быстрее)
 const SYSTEM = 'You are a model that can do function calling with the following functions';
 
 // Фраза опирается на прошлую реплику — без истории её не понять
@@ -65,6 +66,8 @@ function createRouter({ config, server, skills, audit = () => {}, dataDir }) {
   const cfg = () => ({ ...DEFAULTS, ...config.router });
   // Описания инструментов в запросе: нужны исходной модели (известное имя из core/llama.js), не нужны дообученной (свой .gguf)
   const toolsInPrompt = () => cfg().toolsInPrompt ?? Boolean(MODELS[cfg().model]?.tools);
+  // Системная строка: исходной модели — да; дообученной — как она обучена (MODELS[...].system, иначе без неё)
+  const withSystem = () => cfg().system ?? (toolsInPrompt() || MODELS[cfg().model]?.system === true);
 
   const dataFile = dataDir && path.join(dataDir, 'router-data.jsonl');
 
@@ -82,10 +85,7 @@ function createRouter({ config, server, skills, audit = () => {}, dataDir }) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...server.headers },
       body: JSON.stringify({
-        messages: [
-          { role: 'developer', content: SYSTEM },
-          { role: 'user', content: text },
-        ],
+        messages: [...(withSystem() ? [{ role: 'developer', content: SYSTEM }] : []), { role: 'user', content: text }],
         ...(tools && { tools }),
         temperature: 0,
         max_tokens: 64,
@@ -109,6 +109,13 @@ function createRouter({ config, server, skills, audit = () => {}, dataDir }) {
   //   промпту; null — передать большой модели целиком
   async function route(text, { followup = false } = {}) {
     if (!cfg().enabled || !server.available() || followup || !routable(text)) return null;
+    // Задача для подключённого сервера MCP — сразу большой модели: она видит его в каталоге и пишет параметры
+    const ext = skills.external?.(text);
+    if (ext) {
+      skills.skillInfo(ext)?.prewarm?.(); // пока большая модель думает, сервер успеет подняться
+      audit({ router: 'передал', input: text, mcp: ext });
+      return null;
+    }
     let tools;
     if (toolsInPrompt()) {
       const ids = skillsFor(text);

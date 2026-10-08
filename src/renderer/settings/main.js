@@ -164,8 +164,24 @@ function renderNav() {
   );
 }
 
+// Точка на «Компонентах», если вышли обновления частей Ориона
+function showUpdatesBadge(r) {
+  const item = document.querySelector('.nav-item[data-page="components"]');
+  if (!item) return;
+  item.querySelector('.badge')?.remove();
+  if (r?.updates) {
+    const dot = el('span', 'badge');
+    dot.title = `Обновлений: ${r.updates}`;
+    item.append(dot);
+  }
+}
+
 // --- запуск ---
 renderNav();
+api.updatesList?.().then(showUpdatesBadge);
+api.onUpdatesChanged?.(showUpdatesBadge);
+// Настройку поменяли голосом («говори медленнее») — показать новое значение и здесь
+api.onSettingsChanged?.(() => store.load());
 store.subscribe((state) => {
   mounted.refreshers.forEach((fn) => fn(state));
   $('#restart-bar').hidden = !state.restart;

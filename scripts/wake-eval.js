@@ -7,13 +7,14 @@
 // KWS на модели Vosk — 95% и ложные; текущий способ — 98% без ложных при 1,5% одного ядра.
 const fs = require('node:fs');
 const path = require('node:path');
+const { projectConfigFile } = require('../src/app/paths');
 const sherpa = require('sherpa-onnx-node');
 const { loadConfig } = require('../src/core/config');
 const { createWakeMatcher } = require('../src/core/wake');
 const { forSynth } = require('../src/lib/stress');
 
 const root = path.join(__dirname, '..');
-const config = loadConfig(path.join(root, 'config.json'));
+const config = loadConfig(projectConfigFile(root));
 const s = config.speech;
 const modelsDir = path.resolve(root, s.modelsDir || 'models');
 const save = process.argv.includes('--save');

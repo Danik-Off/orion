@@ -155,7 +155,8 @@ function createAssistant({
 
     // Единственный навык может говорить ответ по мере готовности (поиск: модель пересказывает найденное)
     const skillStream = plan.actions.length === 1 && sayPart ? createSayStreamer(sayPart, { plain: true }) : null;
-    const request = { text, person: who || null, memory: mem, onText: skillStream?.onText };
+    // signal — навыки с долгой работой (серверы MCP) прерываются по «Орион, стоп»
+    const request = { text, person: who || null, memory: mem, onText: skillStream?.onText, signal };
     const { spoken, problems, sources, noFollowUp } = await runActions(plan.actions, request);
     // Ответ навыка уже звучит по предложениям — договорить остаток; ошибка — окно скажет всё заново
     const skillStreamed = !!skillStream?.started() && spoken.length === 1 && !problems.length && !signal?.aborted;
@@ -174,6 +175,7 @@ function createAssistant({
       noFollowUp,
       silent: !!plan.silent && !problems.length,
       streamed: (!!plan.streamed && !plan.actions.length) || skillStreamed,
+      stage: plan.stage, // какая ступень ответила: quick, router, focused, model… — для замера скорости
     };
   }
 

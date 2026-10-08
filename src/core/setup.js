@@ -86,12 +86,12 @@ const missing = (config, modelsDir, stages = ALL_STAGES) =>
   plan(config, modelsDir).filter((i) => stages.includes(i.stage) && !fs.existsSync(i.target));
 
 // Скачивание с прогрессом: onProgress(доля 0..1). Оборванная загрузка продолжается с того же места
-// (файл модели — гигабайты, начинать заново обидно)
-async function download(url, file, onProgress) {
+// (файл модели — гигабайты, начинать заново обидно). signal — отмена (кнопка «Отменить» в настройках)
+async function download(url, file, onProgress = () => {}, signal) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const part = `${file}.part`;
   const have = fs.existsSync(part) ? fs.statSync(part).size : 0;
-  const res = await fetch(url, { redirect: 'follow', headers: have ? { Range: `bytes=${have}-` } : {} });
+  const res = await fetch(url, { redirect: 'follow', headers: have ? { Range: `bytes=${have}-` } : {}, signal });
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
   const resumed = res.status === 206;
   const start = resumed ? have : 0;
@@ -104,7 +104,7 @@ async function download(url, file, onProgress) {
       cb(null, chunk);
     },
   });
-  await pipeline(Readable.fromWeb(res.body), counter, fs.createWriteStream(part, { flags: resumed ? 'a' : 'w' }));
+  await pipeline(Readable.fromWeb(res.body), counter, fs.createWriteStream(part, { flags: resumed ? 'a' : 'w' }), { signal });
   if (total > start && fs.statSync(part).size !== total) throw new Error('Загрузка оборвалась');
   fs.renameSync(part, file);
 }
@@ -359,14 +359,15 @@ async function install({ config, modelsDir, stages = FIRST_RUN, report = () => {
 module.exports = {
   install,
   installItem,
+  download,
+  unpackLlama,
+  sha256Of,
   plan,
   missing,
   estimate,
   formatBytes,
   brainReady,
   remoteConfigured,
-  ollamaHasModel,
-  STAGES,
   PART_TITLES,
   FIRST_RUN,
   ALL_STAGES,

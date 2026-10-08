@@ -37,6 +37,11 @@ contextBridge.exposeInMainWorld('jarvis', {
   pin: (on) => ipcRenderer.send('jarvis:pin', on === true),
   presence: (mode) => ipcRenderer.send('jarvis:presence', String(mode)), // 'full' | 'orb' | 'hidden' | 'collapse' (полное окно → плашка)
   orbHeight: (h) => ipcRenderer.send('jarvis:orb-height', Number(h) || 0), // сколько высоты нужно тексту в плашке
+  // Вопрос со свободным ответом (знакомство) и мастер записи голоса по просьбе ядра
+  onQuestion: (cb) => ipcRenderer.on('jarvis:question', (_e, msg) => cb(msg && typeof msg === 'object' ? msg : {})),
+  replyQuestion: (id, text) =>
+    ipcRenderer.send('jarvis:question-reply', { id: String(id), text: text == null ? null : String(text).slice(0, 200) }),
+  onEnrollOffer: (cb) => ipcRenderer.on('jarvis:enroll-offer', () => cb()),
   onConfirm: (cb) => ipcRenderer.on('jarvis:confirm', (_e, data) => cb(data)),
   onStatus: (cb) => ipcRenderer.on('jarvis:status', (_e, text) => cb(String(text))),
   onFocus: (cb) => ipcRenderer.on('jarvis:focus', () => cb()),
@@ -60,8 +65,46 @@ contextBridge.exposeInMainWorld('jarvis', {
   mcpInstall: (id, inputs) =>
     ipcRenderer.invoke('jarvis:mcp-install', String(id), inputs && typeof inputs === 'object' ? { ...inputs } : {}),
   mcpAdd: (name, target) => ipcRenderer.invoke('jarvis:mcp-add', String(name || ''), String(target || '')),
+  mcpImport: (text, name) => ipcRenderer.invoke('jarvis:mcp-import', String(text || ''), String(name || '')),
   mcpRemove: (name) => ipcRenderer.invoke('jarvis:mcp-remove', String(name)),
+  mcpEnable: (name, on) => ipcRenderer.invoke('jarvis:mcp-enable', String(name), on === true),
   mcpTrust: (name, trust) => ipcRenderer.invoke('jarvis:mcp-trust', String(name), trust === true),
+  mcpTool: (name, tool, on) => ipcRenderer.invoke('jarvis:mcp-tool', String(name), String(tool), on === true),
+  mcpCheck: (name) => ipcRenderer.invoke('jarvis:mcp-check', String(name)),
+  mcpUpdate: (name) => ipcRenderer.invoke('jarvis:mcp-update', String(name)),
+  // Модели на компьютере и llama.cpp: список, скачать (из каталога или по ссылке), свой файл, отменить, удалить,
+  // использовать; проверить, обновить и откатить llama.cpp. Ход загрузки и состояние — onModelsChanged
+  modelsList: () => ipcRenderer.invoke('jarvis:models-list'),
+  modelsDownload: (id) => ipcRenderer.invoke('jarvis:models-download', String(id)),
+  modelsLink: (link) => ipcRenderer.invoke('jarvis:models-link', String(link || '')),
+  modelsImport: () => ipcRenderer.invoke('jarvis:models-import'),
+  modelsCancel: (id) => ipcRenderer.invoke('jarvis:models-cancel', String(id)),
+  modelsRemove: (id) => ipcRenderer.invoke('jarvis:models-remove', String(id)),
+  modelsUse: (id) => ipcRenderer.invoke('jarvis:models-use', String(id)),
+  engineCheck: () => ipcRenderer.invoke('jarvis:engine-check'),
+  engineUpdate: () => ipcRenderer.invoke('jarvis:engine-update'),
+  engineRollback: () => ipcRenderer.invoke('jarvis:engine-rollback'),
+  onModelsChanged: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on('jarvis:models-changed', handler);
+    return () => ipcRenderer.removeListener('jarvis:models-changed', handler);
+  },
+  // Обновления частей (llama.cpp, быстрая модель, речь, голос, MCP): список, проверить всё, обновить, вернуть
+  updatesList: () => ipcRenderer.invoke('jarvis:updates-list'),
+  updatesCheck: () => ipcRenderer.invoke('jarvis:updates-check'),
+  updatesApply: (id) => ipcRenderer.invoke('jarvis:updates-apply', String(id)),
+  updatesRollback: (id) => ipcRenderer.invoke('jarvis:updates-rollback', String(id)),
+  onUpdatesChanged: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on('jarvis:updates-changed', handler);
+    return () => ipcRenderer.removeListener('jarvis:updates-changed', handler);
+  },
+  // Состояние серверов поменялось (подключился, уснул, ошибка) — окно настроек перерисовывает список
+  onMcpChanged: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on('jarvis:mcp-changed', handler);
+    return () => ipcRenderer.removeListener('jarvis:mcp-changed', handler);
+  },
   installComponent: (stage) => ipcRenderer.invoke('jarvis:install-component', String(stage)),
   // Обновления: ход загрузки ({ title, progress, done?, error? }) и проверка по кнопке
   onUpdate: (cb) => ipcRenderer.on('jarvis:update', (_e, r) => cb(r || {})),
@@ -72,6 +115,29 @@ contextBridge.exposeInMainWorld('jarvis', {
   setListening: (on) => ipcRenderer.send('jarvis:listening', on === true), // «жду вас»: слушать без детектора речи
   synth: (text) => ipcRenderer.invoke('jarvis:synth', String(text)),
   onAnnounce: (cb) => ipcRenderer.on('jarvis:announce', (_e, text) => cb(String(text))),
+  // Радио в окне разговора: команды из ядра и что сейчас играет
+  // Будильник: звонок из ядра и «отложить»
+  onAlarm: (cb) => ipcRenderer.on('jarvis:alarm', (_e, msg) => cb(msg && typeof msg === 'object' ? msg : {})),
+  alarmSnooze: (payload, minutes) =>
+    ipcRenderer.send('jarvis:alarm-snooze', {
+      payload: {
+        id: Number(payload?.id) || 0,
+        label: String(payload?.label || '').slice(0, 80),
+        radio: String(payload?.radio || '').slice(0, 80),
+      },
+      minutes: Number(minutes) || 10,
+    }),
+  onRadio: (cb) => ipcRenderer.on('jarvis:radio', (_e, msg) => cb(msg && typeof msg === 'object' ? msg : {})),
+  radioState: (state) =>
+    ipcRenderer.send('jarvis:radio-state', {
+      playing: state?.playing === true,
+      active: state?.active === true,
+      name: String(state?.name || '').slice(0, 120),
+    }),
+  // Мини-плеер радио: что играет ({ playing, active, name, song, volume, corner }) и кнопки
+  onRadioPlayer: (cb) => ipcRenderer.on('jarvis:radio-player', (_e, s) => cb(s && typeof s === 'object' ? s : {})),
+  radioControl: (action, value) =>
+    ipcRenderer.send('jarvis:radio-control', { action: String(action || '').slice(0, 20), value: Number(value) || 0 }),
   onRemind: (cb) => ipcRenderer.on('jarvis:remind', (_e, text) => cb(String(text))),
   onSessionEnd: (cb) => ipcRenderer.on('jarvis:session-end', (_e, reason) => cb(String(reason || ''))), // разговор забыт — стереть реплики
   onToggleMic: (cb) => ipcRenderer.on('jarvis:toggle-mic', () => cb()),

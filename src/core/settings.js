@@ -68,6 +68,13 @@ const FIELDS = {
   'speech.vadThreshold': { check: number(0.15, 0.6, 0.05), live: false },
   'speech.speaker.require': { check: oneOf('off', 'followup', 'always'), live: true },
   'updates.notify': { check: bool, live: true },
+  'radio.last': { check: text(120), live: true }, // навык radio: «включи радио» — последняя станция
+  'radio.volume': { check: number(0, 1, 0.01), live: true },
+  // Мини-плеер радио: показывать ли, в каком углу и на каком экране (id дисплея; нет такого — основной)
+  'radio.player.show': { check: bool, live: true },
+  'radio.player.corner': { check: oneOf('br', 'bl', 'tr', 'tl'), live: true },
+  'radio.player.display': { check: (v) => (Number.isSafeInteger(Number(v)) ? Number(v) : undefined), live: true },
+  onboarded: { check: bool, live: true }, // знакомство после установки прошло
 };
 
 const get = (obj, keys) => keys.reduce((o, k) => o?.[k], obj);
@@ -78,7 +85,10 @@ function set(obj, keys, value) {
   o[last] = value;
 }
 
-function createSettings({ config, file, skills, setHotkey }) {
+// secrets — шифрование ключей в файле (core/secrets.js); без него — открытым текстом, как раньше
+function createSettings({ config, file, skills, setHotkey, secrets = require('./secrets').plainSecrets }) {
+  const readUser = () => secrets.open(JSON.parse(fs.readFileSync(file, 'utf8')));
+  const writeUser = (user) => fs.writeFileSync(file, `${JSON.stringify(secrets.seal(user), null, 2)}\n`);
   const values = () => {
     const out = {};
     for (const [key, field] of Object.entries(FIELDS)) {
@@ -124,29 +134,32 @@ function createSettings({ config, file, skills, setHotkey }) {
     }
     if (!changes.length) return { ok: true, restart: false };
 
-    const user = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const user = readUser();
     for (const [keys, value] of changes) {
       set(config, keys, value);
       set(user, keys, value);
     }
-    fs.writeFileSync(file, `${JSON.stringify(user, null, 2)}\n`);
+    writeUser(user);
     return { ok: true, restart };
   }
 
   // Запись по пути без проверки поля — для составных настроек, у которых свой разбор (серверы MCP).
   // value === undefined — удалить ключ
   function setPath(keys, value) {
-    const user = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const user = readUser();
     for (const target of [config, user]) {
       if (value === undefined) {
         const parent = get(target, keys.slice(0, -1));
         if (parent && typeof parent === 'object') delete parent[keys.at(-1)];
       } else set(target, keys, value);
     }
-    fs.writeFileSync(file, `${JSON.stringify(user, null, 2)}\n`);
+    writeUser(user);
   }
 
-  return { values, skills: skillList, save, setPath };
+  // Перезаписать файл с зашифрованными ключами (переход со старой версии, где ключи лежали открытым текстом)
+  const reseal = () => secrets.available() && secrets.hasPlain(JSON.parse(fs.readFileSync(file, 'utf8'))) && (writeUser(readUser()), true);
+
+  return { values, skills: skillList, save, setPath, reseal };
 }
 
 module.exports = { createSettings };

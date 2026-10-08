@@ -1,11 +1,12 @@
 // Скачивает всё, что нужно ассистенту (модели речи, llama.cpp и языковую модель; или модель в Ollama) — то же,
 // что приложение делает само при первом запуске. Запуск: npm run models
 const path = require('node:path');
+const { projectConfigFile } = require('../src/app/paths');
 const { loadConfig } = require('../src/core/config');
 const { install, missing, ALL_STAGES } = require('../src/core/setup');
 
 const root = path.join(__dirname, '..');
-const config = loadConfig(path.join(root, 'config.json'));
+const config = loadConfig(projectConfigFile(root));
 const modelsDir = path.resolve(root, config.speech.modelsDir || 'models');
 
 console.log(missing(config, modelsDir).length ? 'Не хватает:' : 'Модели речи на месте.');

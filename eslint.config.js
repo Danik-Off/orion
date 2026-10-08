@@ -21,7 +21,7 @@ const rules = {
 };
 
 module.exports = [
-  { ignores: ['node_modules/', 'dist/', 'build/', 'models/', 'data/', 'voice-check/', 'wake-eval/', 'voice-samples/', 'src/assets/'] },
+  { ignores: ['node_modules/', 'dist/', 'build/', 'models/', 'data/', 'voice-check/', 'wake-eval/', 'src/assets/'] },
   js.configs.recommended,
   {
     // Ядро, навыки, скрипты и тесты — Node (CommonJS)

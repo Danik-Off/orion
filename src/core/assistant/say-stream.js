@@ -4,7 +4,7 @@ const { STOP } = require('../llm');
 // Только для разговора без действий — когда план уже не изменится: начало JSON должно быть
 // {"topic":"chat","actions":[],"say":"… (у фраз без имени перед ним "addressed":true).
 const CHAT_PREFIX = /^\s*\{\s*(?:"addressed"\s*:\s*true\s*,\s*)?"topic"\s*:\s*"chat"\s*,\s*"actions"\s*:\s*\[\s*\]\s*,\s*"say"\s*:\s*"/;
-// Точка после инициала или короткого сокращения («А. С. Пушкин», «г. Липецк», «т. е.») — не конец предложения:
+// Точка после инициала или короткого сокращения («А. С. Пушкин», «г. Казань», «т. е.») — не конец предложения:
 // нормализатор речи должен получить сокращение вместе с тем, к чему оно относится
 const SENTENCE_END = /(?:(?<!(?:^|[^\p{L}])(?:\p{L}|ул|пр|проф|им|ст|стр|рис|тел|кв|обл|ок|см|рт|напр))\.|[!?…])[.!?…]*["»)]*(?=\s)/gu;
 
@@ -120,4 +120,4 @@ function createSayCutter(speaks = () => false) {
   return { onText, plan: () => cut };
 }
 
-module.exports = { createSayStreamer, createSayCutter, lastSentenceEnd };
+module.exports = { createSayStreamer, createSayCutter };

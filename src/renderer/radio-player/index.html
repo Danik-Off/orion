@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Радио</title>
+    <link rel="stylesheet" href="player.css" />
+  </head>
+  <body>
+    <svg class="sprite" aria-hidden="true">
+      <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" /></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z" /></symbol>
+      <symbol id="i-next" viewBox="0 0 24 24"><path d="M5 5l10 7-10 7zM19 5v14" /></symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></symbol>
+    </svg>
+    <main class="player" id="player">
+      <div class="wave" id="wave" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <div class="info" title="Перетащите в любой угол или на другой экран">
+        <div class="name" id="name">Радио</div>
+        <div class="song" id="song"></div>
+      </div>
+      <div class="controls">
+        <button id="toggle" title="Пауза" aria-label="Пауза"><svg><use href="#i-pause" /></svg></button>
+        <button id="next" title="Другая станция" aria-label="Другая станция"><svg><use href="#i-next" /></svg></button>
+        <input id="volume" type="range" min="0" max="100" step="1" title="Громкость" aria-label="Громкость" />
+        <button id="stop" title="Выключить радио" aria-label="Выключить радио"><svg><use href="#i-stop" /></svg></button>
+      </div>
+    </main>
+    <script src="player.js"></script>
+  </body>
+</html>

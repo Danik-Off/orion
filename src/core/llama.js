@@ -9,21 +9,104 @@ const { spawn, execFile } = require('node:child_process');
 
 const RELEASES = 'https://github.com/ggml-org/llama.cpp/releases/download';
 
-// Модели по короткому имени (то же имя, что у Ollama, — настройка «model» одна на оба движка)
-// repo — файл с Hugging Face; url — прямая ссылка; tools: true — модели нужны описания инструментов в запросе
+// Модели по короткому имени (то же имя, что у Ollama, — настройка «model» одна на оба движка).
+// Большие — каталог «Модели на компьютере»: каждая проверена в Орионе (npm run eval -- --model …), см. docs/TECHNICAL.md.
+//   repo — файл с Hugging Face; url — прямая ссылка; size — байты; title, about, tags, license — для каталога;
+//   accuracy, ms — замер на 108 фразах (доля верных планов и среднее время ответа, RTX 5070) — видно в каталоге;
+//   tools: true — модели нужны описания инструментов в запросе; internal — маленькая модель первой ступени
 const MODELS = {
-  'qwen3.5:4b': { repo: 'unsloth/Qwen3.5-4B-GGUF', file: 'Qwen3.5-4B-Q4_K_M.gguf', size: 2.74e9 },
+  'qwen3.5:4b': {
+    accuracy: 0.96,
+    ms: 435,
+    repo: 'unsloth/Qwen3.5-4B-GGUF',
+    file: 'Qwen3.5-4B-Q4_K_M.gguf',
+    size: 2.74e9,
+    title: 'Qwen 3.5 4B',
+    about: 'Лучший баланс скорости и ума для Ориона',
+    tags: ['по умолчанию', 'рекомендую'],
+    license: 'Apache 2.0',
+  },
+  'qwen3.5:0.8b': {
+    accuracy: 0.6,
+    ms: 317,
+    repo: 'unsloth/Qwen3.5-0.8B-GGUF',
+    file: 'Qwen3.5-0.8B-Q4_K_M.gguf',
+    size: 5.33e8,
+    title: 'Qwen 3.5 0.8B',
+    about: 'Самая лёгкая, для слабых компьютеров; понимает заметно хуже',
+    tags: ['лёгкая'],
+    license: 'Apache 2.0',
+  },
+  'qwen3.5:2b': {
+    accuracy: 0.86,
+    ms: 252,
+    repo: 'unsloth/Qwen3.5-2B-GGUF',
+    file: 'Qwen3.5-2B-Q4_K_M.gguf',
+    size: 1.28e9,
+    title: 'Qwen 3.5 2B',
+    about: 'Быстрая и нетребовательная',
+    tags: ['лёгкая'],
+    license: 'Apache 2.0',
+  },
+  'qwen3.5:9b': {
+    repo: 'unsloth/Qwen3.5-9B-GGUF',
+    file: 'Qwen3.5-9B-Q4_K_M.gguf',
+    size: 5.68e9,
+    title: 'Qwen 3.5 9B',
+    about: 'Старшая Qwen 3.5: умнее в разговоре, медленнее; точность не замерялась',
+    tags: [],
+    license: 'Apache 2.0',
+  },
+  'gemma4:e4b': {
+    accuracy: 0.95,
+    ms: 1639,
+    repo: 'ggml-org/gemma-4-E4B-it-GGUF',
+    file: 'gemma-4-E4B-it-Q4_0.gguf',
+    size: 4.59e9,
+    title: 'Gemma 4 E4B',
+    about: 'Модель Google: понимает почти как Qwen 4B, но отвечает медленнее',
+    tags: [],
+    license: 'Apache 2.0',
+  },
+  'gemma4:12b': {
+    repo: 'google/gemma-4-12B-it-qat-q4_0-gguf',
+    file: 'gemma-4-12b-it-qat-q4_0.gguf',
+    size: 6.98e9,
+    title: 'Gemma 4 12B',
+    about: 'Старшая Gemma 4 для мощной видеокарты; точность не замерялась',
+    tags: [],
+    license: 'Apache 2.0',
+  },
+  'yandexgpt5-lite:8b': {
+    accuracy: 0.83,
+    ms: 751,
+    repo: 'yandex/YandexGPT-5-Lite-8B-instruct-GGUF',
+    file: 'YandexGPT-5-Lite-8B-instruct-Q4_K_M.gguf',
+    size: 4.92e9,
+    title: 'YandexGPT 5 Lite',
+    about: 'Модель Яндекса, обучена на русском',
+    tags: ['русская'],
+    license: 'YandexGPT-5-Lite',
+  },
   // Маленькая модель вызова функций (core/router.js), дообученная под навыки Ориона (scripts/router-train.py):
   // инструменты знает наизусть. Скачивается при первом запуске — с ней Орион выполняет команды без большой модели
   'orion-router': {
     url: 'https://github.com/Danik-Off/orion/releases/download/models-router-v1/orion-router-q8_0.gguf',
     file: 'orion-router-q8_0.gguf',
     size: 2.92e8,
+    internal: true, // своя внутренняя модель первой ступени — в списке больших моделей не показывается
+    system: true, // v1 обучена со строкой FunctionGemma в запросе (core/router.js → withSystem)
     // Скачанный файл сверяется с этой суммой (npm run router-release печатает её для нового файла)
     sha256: '54512c0228b9de42c4668dfb450e9d70e6d309e1a79d55e5de8a185995f12578',
   },
   // Исходная FunctionGemma — для дообучения и сравнения; ей нужны описания инструментов
-  'functiongemma:270m': { repo: 'unsloth/functiongemma-270m-it-GGUF', file: 'functiongemma-270m-it-Q8_0.gguf', size: 2.92e8, tools: true },
+  'functiongemma:270m': {
+    repo: 'unsloth/functiongemma-270m-it-GGUF',
+    file: 'functiongemma-270m-it-Q8_0.gguf',
+    size: 2.92e8,
+    tools: true,
+    internal: true,
+  },
 };
 
 // Сборка llama.cpp для этой машины. Vulkan работает на видеокартах NVIDIA, AMD и Intel, а без видеокарты —
@@ -34,7 +117,7 @@ function variant(platform = process.platform, arch = process.arch) {
   return arch === 'arm64' ? 'ubuntu-vulkan-arm64' : 'ubuntu-vulkan-x64';
 }
 
-// Где что лежит и откуда качать. model — имя из MODELS или имя своего файла .gguf в models/llm
+// Где что лежит и откуда качать. model — имя из MODELS, имя своего файла .gguf в models/llm или полный путь к .gguf
 function paths(config, modelsDir) {
   const { build } = config.llamaCpp;
   const v = config.llamaCpp.variant || variant();
@@ -45,7 +128,7 @@ function paths(config, modelsDir) {
     dir,
     exe: path.join(dir, process.platform === 'win32' ? 'llama-server.exe' : 'llama-server'),
     url: `${RELEASES}/${build}/llama-${build}-bin-${v}.${v.startsWith('win') ? 'zip' : 'tar.gz'}`,
-    gguf: path.join(modelsDir, 'llm', file),
+    gguf: path.isAbsolute(file) ? file : path.join(modelsDir, 'llm', file),
     ggufUrl: known && (known.url || `https://huggingface.co/${known.repo}/resolve/main/${known.file}`),
     size: known?.size,
     sha256: known?.sha256,
@@ -53,13 +136,20 @@ function paths(config, modelsDir) {
 }
 
 // Модели для списка в настройках: известные и свои файлы .gguf из models/llm
-function localModels(modelsDir) {
+// Маленькие модели первой ступени (orion-router, FunctionGemma и их файлы, в том числе свои дообученные) —
+// внутренние: большой моделью их не выбирают
+const isInternalModel = (name) => !!MODELS[name]?.internal || /^(orion-router|functiongemma)/i.test(String(name));
+
+// Скачанные модели (и текущая, даже если её файла ещё нет) — для списка «Модель» в настройках
+function localModels(modelsDir, current = '') {
   let files = [];
   try {
     files = fs.readdirSync(path.join(modelsDir, 'llm')).filter((f) => f.endsWith('.gguf'));
   } catch {}
+  const have = new Set(files);
+  const known = Object.keys(MODELS).filter((id) => have.has(MODELS[id].file) || id === current);
   const knownFiles = new Set(Object.values(MODELS).map((m) => m.file));
-  return [...Object.keys(MODELS), ...files.filter((f) => !knownFiles.has(f))];
+  return [...known, ...files.filter((f) => !knownFiles.has(f))].filter((m) => !isInternalModel(m));
 }
 
 function freePort() {
@@ -74,11 +164,12 @@ function freePort() {
   });
 }
 
-// «Vulkan0: NVIDIA GeForce RTX 5070 (11943 MiB, 11175 MiB free)» → [{ name, title, free }]
+// «Vulkan0: NVIDIA GeForce RTX 5070 (11943 MiB, 11175 MiB free)» → [{ name, title, total, free }] (МиБ)
 function parseDevices(text) {
   return [...String(text).matchAll(/^\s*([A-Za-z]+\d+):\s*(.+?)\s*\((\d+) MiB, (\d+) MiB free\)/gm)].map((m) => ({
     name: m[1],
     title: m[2],
+    total: Number(m[3]),
     free: Number(m[4]),
   }));
 }
@@ -144,6 +235,12 @@ function createLlamaServer({ config, modelsDir, log = () => {}, idleMs = 0, name
       String(config.llamaCpp.gpuLayers ?? 999), // всё на видеокарту; без неё параметр ничего не делает
     ];
     if (device) args.push('-dev', device);
+    // Без «размышлений вслух»: у Qwen это выключает и chat_template_kwargs, а у других моделей (Gemma 4 и т. п.)
+    // свой шаблон — флаг движка выключает для любой. Включить — config.think: true
+    if (config.think !== true) args.push('--reasoning', 'off');
+    // Свои параметры запуска (config.json → llamaCpp.args: ["-ctk", "q8_0"]) — для тонкой подстройки
+    const extra = Array.isArray(config.llamaCpp.args) ? config.llamaCpp.args.map(String) : [];
+    args.push(...extra);
     tail = [];
     proc = spawn(p.exe, args, { cwd: p.dir, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
     proc.stderr.setEncoding('utf8').on('data', (d) => (tail = [...tail, ...d.split('\n').filter(Boolean)].slice(-15)));
@@ -205,4 +302,4 @@ function createLlamaServer({ config, modelsDir, log = () => {}, idleMs = 0, name
   };
 }
 
-module.exports = { createLlamaServer, paths, variant, localModels, parseDevices, pickDevice, MODELS };
+module.exports = { createLlamaServer, paths, variant, localModels, isInternalModel, parseDevices, pickDevice, listDevices, MODELS };

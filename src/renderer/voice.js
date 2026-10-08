@@ -49,7 +49,7 @@ function createSpeaker({ ownVoice, onStart, onEnd }) {
 
   // Конец предложения — знак, пробел и заглавная (цифра, кавычка): «26.09.2026», «84.34», «т. е. это» не режем —
   // нормализатор речи должен увидеть дату или сокращение целиком, иначе «26.» и «09.» прочтёт порознь.
-  // Точка после инициала или короткого сокращения («А. С. Пушкин», «г. Липецк», «ул. Ленина») — тоже не конец.
+  // Точка после инициала или короткого сокращения («А. С. Пушкин», «г. Казань», «ул. Ленина») — тоже не конец.
   const sentences = (text) =>
     text
       .split(/(?<=[.!?…]["»)]*)(?<!(?:^|[^\p{L}])(?:\p{L}|ул|пр|проф|им|ст|стр|рис|тел|кв|обл|ок|см|рт|напр)\.)\s+(?=[«"(]?[А-ЯЁA-Z\d])/u)
@@ -180,7 +180,8 @@ function createSpeaker({ ownVoice, onStart, onEnd }) {
 
 // Короткий сигнал: «слушаю» (два тона вверх) или «напоминание» (четыре тона).
 let chimeCtx = null;
-function playChime(kind = 'listen') {
+// volume — 0..1 (будильник нарастает)
+function playChime(kind = 'listen', volume = 1) {
   chimeCtx ??= new AudioContext();
   const notes = kind === 'alarm' ? [880, 660, 880, 660] : [660, 990];
   const t0 = chimeCtx.currentTime + 0.01;
@@ -191,7 +192,7 @@ function playChime(kind = 'listen') {
     osc.type = 'sine';
     osc.frequency.value = freq;
     gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(0.15, t + 0.01);
+    gain.gain.linearRampToValueAtTime(0.15 * Math.max(0.05, Math.min(1, volume)), t + 0.01);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
     osc.connect(gain).connect(chimeCtx.destination);
     osc.start(t);

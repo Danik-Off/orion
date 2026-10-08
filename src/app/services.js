@@ -56,6 +56,28 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
       setTimeout(() => pendingConfirms.delete(id) && resolve(null), CONFIRM_TIMEOUT_MS);
     });
   }
+  // Вопрос со свободным ответом (город при знакомстве): голосом — следующая фраза без имени, или текстом.
+  // «Пропустить» — null; без ответа за timeoutMs (человек отошёл) — undefined
+  const pendingQuestions = new Map();
+  function ask(text, { timeoutMs = 60_000 } = {}) {
+    return new Promise((resolve) => {
+      const id = crypto.randomUUID();
+      pendingQuestions.set(id, resolve);
+      ui.setMode('full');
+      ui.send('jarvis:question', { id, text });
+      setTimeout(() => pendingQuestions.delete(id) && resolve(undefined), timeoutMs); // не ответили — undefined
+    });
+  }
+  function answerQuestion(id, text) {
+    const resolve = pendingQuestions.get(id);
+    if (!resolve) return;
+    pendingQuestions.delete(id);
+    const t = typeof text === 'string' ? text.trim().slice(0, 200) : '';
+    resolve(t || null);
+  }
+  // Открыть в окне мастер записи голоса (там же — имя и обращение)
+  const startEnrollment = () => (ui.setMode('full'), ui.send('jarvis:enroll-offer'));
+
   function answerConfirm(id, ok) {
     const resolve = pendingConfirms.get(id);
     if (!resolve) return;
@@ -77,6 +99,58 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
     ui.send('jarvis:announce', String(text));
   }
 
+  // Радио играет в окне разговора (renderer/radio.js): ядро говорит, что включить; окно сообщает, что играет.
+  // active — станция выбрана (играет или на паузе); подписчики (мини-плеер) узнают о каждом изменении
+  let radioState = { playing: false, active: false, name: '', url: '', volume: config.radio?.volume ?? 0.8 };
+  const radioListeners = new Set();
+  const radioChanged = (patch) => {
+    radioState = { ...radioState, ...patch };
+    for (const fn of radioListeners) fn(radioState);
+  };
+  const radio = {
+    play: (station) => {
+      radioChanged({ playing: false, active: true, name: station.name, url: station.url }); // окно сообщит, когда заиграет
+      ui.send('jarvis:radio', { action: 'play', station: { name: station.name, url: station.url }, volume: radioState.volume });
+    },
+    stop: () => ui.send('jarvis:radio', { action: 'stop' }),
+    pause: () => ui.send('jarvis:radio', { action: 'pause' }),
+    resume: () => ui.send('jarvis:radio', { action: 'resume' }),
+    setVolume: (v) => {
+      const volume = Math.max(0, Math.min(1, Number(v) || 0));
+      radioChanged({ volume });
+      ui.send('jarvis:radio', { action: 'volume', volume });
+    },
+    next: () => skills.run('radio', 'другое'), // «другая станция» кнопкой — как голосом
+    state: () => radioState,
+    onChange: (fn) => (radioListeners.add(fn), () => radioListeners.delete(fn)),
+    report: (s) =>
+      radioChanged({
+        playing: s?.playing === true,
+        active: s?.active === true,
+        name: String(s?.name || radioState.name),
+        url: s?.active === false ? '' : radioState.url,
+      }),
+  };
+
+  // Будильник: окно звенит (или включает радио), пока человек не выключит; «ещё 5 минут» — повтор через ядро.
+  // payload: { id, label, radio } — radio: название станции; находится здесь, окну — готовый адрес
+  async function alarm(payload) {
+    let station = null;
+    if (payload.radio)
+      station = await require('../lib/radio')
+        .findStation(payload.radio)
+        .catch(() => null);
+    ui.setMode('full');
+    ui.send('jarvis:alarm', { id: payload.id, label: String(payload.label || 'Будильник'), station, radio: payload.radio || '' });
+    audit({ alarm: 'звенит', label: payload.label, radio: payload.radio || undefined, found: payload.radio ? !!station : undefined });
+  }
+  const alarmSnooze = (payload, minutes) => {
+    const ms = Math.min(60, Math.max(1, Number(minutes) || 10)) * 60_000;
+    const t = setTimeout(() => alarm(payload), ms);
+    t.unref?.();
+    audit({ alarm: 'отложен', minutes: ms / 60_000 });
+  };
+
   // Возможности ядра, которые получают навыки (контракт — в core/skills.js)
   const { shell, clipboard } = electron;
   const ctx = {
@@ -87,6 +161,10 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
     confirm,
     remind,
     say,
+    radio,
+    alarm,
+    ask,
+    startEnrollment,
     audit,
     openExternal: (url) => shell.openExternal(url),
     openPath: (p) => shell.openPath(p),
@@ -120,12 +198,16 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
     audit,
     memory,
     llama,
+    routerServer, // маленькая модель первой ступени — свой llama-server (перезапуск при смене llama.cpp)
     llm,
     wake,
     learnWake,
     confirm,
     answerConfirm,
     awaitingConfirm: () => pendingConfirms.size > 0,
+    answerQuestion,
+    radio,
+    alarmSnooze,
     allSkills, // все навыки — для списка в настройках
     ctx,
     skills,

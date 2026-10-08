@@ -3,6 +3,7 @@
 const { pressMediaKey, MEDIA_KEYS } = require('../lib/windows');
 const { searchVideos, pickForListening, watchUrl } = require('../lib/youtube');
 const media = require('../lib/media');
+const { streamTitle } = require('../lib/radio');
 
 let lastMedia = null; // для «ещё»: повторить последнее действие плеера
 
@@ -69,11 +70,13 @@ async function playOnYoutube(query, ctx) {
   const video = pickForListening(await searchVideos(query), { mix });
   if (!video) return { ok: false, message: `Не нашёл на YouTube «${query}».` };
 
-  // Сначала останавливаем то, что уже играет, чтобы звуки не смешались
+  // Сначала останавливаем то, что уже играет (и радио Ориона), чтобы звуки не смешались
+  ctx.radio?.stop();
   const before = await media.sessions().catch(() => []);
   for (const s of before.filter((x) => x.status === 'Playing')) await media.control('pause', s.app).catch(() => {});
 
-  await ctx.openExternal(watchUrl(video.id));
+  // Песня — в режиме микса: после неё YouTube сам продолжит похожими (длинный микс и так на часы)
+  await ctx.openExternal(watchUrl(video.id, { similar: !mix }));
 
   ensurePlaying(video, ctx); // в фоне — ответ не ждёт проверки
   return { ok: true, speak: `Включаю «${speakable(video.title)}».`, silentAfter: true };
@@ -110,6 +113,7 @@ module.exports = {
     'клип',
     'плеер',
     'играет',
+    'играют',
     'пауз',
     'громч',
     'погромч',
@@ -160,7 +164,17 @@ module.exports = {
       use: 'что сейчас играет',
       arg: 'пусто',
       examples: [['что сейчас играет', { addressed: true, say: 'Сейчас посмотрю.', actions: [{ tool: 'now_playing', arg: '' }] }]],
-      run: async () => {
+      run: async (_arg, ctx = {}) => {
+        const radio = ctx.radio?.state();
+        if (radio?.playing) {
+          // Многие станции передают «исполнитель — песня» в самом потоке
+          const song = radio.url ? await streamTitle(radio.url) : '';
+          // Не все передают (Europa Plus шлёт пустое название) — так и сказать, а не просто имя станции
+          return {
+            ok: true,
+            speak: song ? `На ${radio.name} играет: ${song}.` : `Играет ${radio.name}, но название песни станция не передаёт.`,
+          };
+        }
         const list = await media.sessions();
         const playing = list.find((s) => s.status === 'Playing') || list[0];
         if (!playing?.title) return { ok: true, speak: 'Сейчас ничего не играет.' };

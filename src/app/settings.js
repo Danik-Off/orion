@@ -1,5 +1,5 @@
 // Настройки из окна: значения, сохранение в config.json, список моделей, горячая клавиша.
-const { localModels } = require('../core/llama');
+const { localModels, isInternalModel } = require('../core/llama');
 const { versionLabel } = require('../core/version');
 const { createSettings } = require('../core/settings');
 const { supports } = require('../core/skills');
@@ -28,22 +28,37 @@ function createHotkey({ globalShortcut, config, ui }) {
 
 // Модели для списка в настройках: у llama.cpp — известные и свои файлы .gguf, у Ollama — установленные в нём
 async function llmModels(config, modelsDir) {
-  if (config.backend !== 'ollama') return localModels(modelsDir);
+  if (config.backend !== 'ollama') return localModels(modelsDir, config.model);
   try {
     const res = await fetch(`${config.ollamaUrl}/api/tags`, { signal: AbortSignal.timeout(2000) });
-    return res.ok ? ((await res.json()).models || []).map((m) => m.name) : [];
+    return res.ok ? ((await res.json()).models || []).map((m) => m.name).filter((m) => !isInternalModel(m)) : [];
   } catch {
     return []; // Ollama не запущен — модель можно ввести вручную
   }
 }
 
-function createSettingsIpc({ app, config, configFile, modelsDir, services, voice, ui, settingsWindow, ipc, registerHotkey }) {
+// onSaved(patch) — после сохранения: то, что живёт вне окон (мини-плеер радио), подхватывает новое
+function createSettingsIpc({
+  app,
+  config,
+  configFile,
+  modelsDir,
+  services,
+  voice,
+  ui,
+  settingsWindow,
+  ipc,
+  registerHotkey,
+  secrets,
+  onSaved = () => {},
+}) {
   // Вкладка «Настройки» (навыки — только те, что работают на этой ОС)
   const settings = createSettings({
     config,
     file: configFile,
     skills: services.allSkills.filter((s) => supports(s)),
     setHotkey: registerHotkey,
+    secrets,
   });
 
   ipc.handle('jarvis:settings', async () => {
@@ -69,16 +84,23 @@ function createSettingsIpc({ app, config, configFile, modelsDir, services, voice
     models: await llmModels(config, modelsDir),
     version: app.getVersion(),
   }));
+  // Сохранить и сообщить окнам — и из окна настроек, и голосом («говори медленнее», «смени голос»)
+  function saveAndShare(patch) {
+    const r = settings.save(patch);
+    if (r.ok) {
+      services.audit({ settings: Object.keys(patch || {}) });
+      // Окно разговора применяет то, что держит у себя (голос, скорость, ожидание продолжения…). Ключ — не отдаём
+      const shared = Object.fromEntries(Object.entries(patch || {}).filter(([k]) => !k.endsWith('apiKey')));
+      ui.send('jarvis:settings-changed', shared);
+      settingsWindow.send('jarvis:settings-changed', shared);
+      onSaved(patch);
+    }
+    return r;
+  }
+  settings.saveAndShare = saveAndShare;
   ipc.handle('jarvis:settings-save', (patch) => {
     try {
-      const r = settings.save(patch);
-      if (r.ok) {
-        services.audit({ settings: Object.keys(patch || {}) });
-        // Окно разговора применяет то, что держит у себя (ожидание продолжения, знакомые голоса…). Ключ — не отдаём
-        const shared = Object.fromEntries(Object.entries(patch || {}).filter(([k]) => !k.endsWith('apiKey')));
-        ui.send('jarvis:settings-changed', shared);
-      }
-      return r;
+      return saveAndShare(patch);
     } catch (e) {
       return { ok: false, error: e.message };
     }
@@ -100,4 +122,4 @@ function createSettingsIpc({ app, config, configFile, modelsDir, services, voice
   return settings;
 }
 
-module.exports = { createSettingsIpc, createHotkey, llmModels };
+module.exports = { createSettingsIpc, createHotkey };

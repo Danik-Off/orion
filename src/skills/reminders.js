@@ -1,9 +1,11 @@
-// Таймеры и напоминания — один навык: «через 10 минут» (таймер), «завтра в 9», «каждый день в 8», «каждый час».
+// Таймеры, напоминания и будильник — один навык: «через 10 минут» (таймер), «завтра в 9», «каждый день в 8»,
+// «каждый час»; будильник — «разбуди меня в семь (под радио Маяк)», «по будням», звенит, пока не выключат.
 // Сработавшее: голос, звуковой сигнал и уведомление Windows.
 // Напоминания на время хранятся в reminders.json и переживают перезапуск; пропущенные, пока приложение
 // было закрыто, звучат при старте. Таймеры «через N» живут до перезапуска.
 const { createStore } = require('../lib/store');
 const { durationFromText } = require('../lib/ru');
+const { parseClock, formatClock } = require('../lib/clock');
 
 // --- таймеры «через N» ---
 
@@ -51,7 +53,8 @@ const dayName = (d) => {
   if (diff === 2) return 'послезавтра';
   return new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
 };
-const when = (r) => (r.every ? `каждые ${r.every} мин` : `${r.daily ? 'каждый день' : dayName(r.at)} в ${hhmm(new Date(r.at))}`);
+const when = (r) =>
+  r.every ? `каждые ${r.every} мин` : `${r.weekdays ? 'по будням' : r.daily ? 'каждый день' : dayName(r.at)} в ${hhmm(new Date(r.at))}`;
 
 // "2026-10-01 09:30|текст", "09:30|текст", "daily 09:00|текст", "every 60|текст"
 function parse(arg, now = new Date()) {
@@ -65,6 +68,7 @@ function parse(arg, now = new Date()) {
     return { text, every: min, at: now.getTime() + min * 60_000 };
   }
   const daily = /^(daily|каждый день)/.test(s);
+  const weekdays = /^(weekdays|по будням|будни)/.test(s); // будильник по будням
   const m = s.match(/(?:(\d{4})-(\d{2})-(\d{2})\s+)?(\d{1,2})[:.](\d{2})/);
   if (!m) return { error: 'Не понял, на какое время поставить напоминание, сэр.' };
   const [, y, mo, d, h, mi] = m.map((x) => (x === undefined ? x : Number(x)));
@@ -73,10 +77,20 @@ function parse(arg, now = new Date()) {
   const at = y ? new Date(y, mo - 1, d, h, mi) : new Date(now.getFullYear(), now.getMonth(), now.getDate() + shift, h, mi);
   if (Number.isNaN(at.getTime())) return { error: 'Не понял дату, сэр.' };
   if (at <= now) {
-    if ((y || shift) && !daily) return { error: 'Это время уже прошло, сэр.' };
+    if ((y || shift) && !daily && !weekdays) return { error: 'Это время уже прошло, сэр.' };
     at.setDate(at.getDate() + 1); // «в 9:00», а сейчас 10 — значит, завтра
   }
-  return { text, daily, at: at.getTime() };
+  if (weekdays) while (isWeekend(at)) at.setDate(at.getDate() + 1);
+  return { text, daily, ...(weekdays && { weekdays }), at: at.getTime() };
+}
+
+const isWeekend = (d) => [0, 6].includes(new Date(d).getDay());
+
+// Следующий раз повторяющегося: каждый день — завтра; по будням — следующий будний день
+function nextTime(r, now) {
+  let at = r.at;
+  while (at <= now || (r.weekdays && isWeekend(at))) at += 86_400_000;
+  return at;
 }
 
 function add(arg) {
@@ -122,19 +136,98 @@ function tick(ctx) {
     const late = now - r.at > 10 * 60_000;
     const hour = new Date().getHours();
     const quiet = r.every && (hour >= QUIET.from || hour < QUIET.to);
-    if (!quiet && !(r.every && late)) ctx.remind(late ? `Пропущенное напоминание: ${r.text}` : r.text);
-    ctx.audit({ reminder: r.text, late });
+    // Будильник звенит, пока не выключат; опоздал (компьютер был выключен) — уже не будит
+    if (r.alarm) {
+      if (!late) ctx.alarm?.({ id: r.id, label: `Будильник ${hhmm(new Date(r.at))}`, radio: r.radio || '' });
+      ctx.audit({ alarm: hhmm(new Date(r.at)), late });
+    } else if (!quiet && !(r.every && late)) ctx.remind(late ? `Пропущенное напоминание: ${r.text}` : r.text);
+    if (!r.alarm) ctx.audit({ reminder: r.text, late });
     if (r.every) r.at = now + r.every * 60_000;
-    else if (r.daily) while (r.at <= now) r.at += 86_400_000;
+    else if (r.daily || r.weekdays) r.at = nextTime(r, now);
     else data.items.splice(data.items.indexOf(r), 1);
   }
   if (changed) store.save();
 }
 
+// --- будильник ---
+
+// arg: "07:30", "tomorrow 07:30", "daily 07:30", "weekdays 07:30", "in 20" (через 20 минут);
+// "|радио маяк" — будить радио; "cancel" — отменить все будильники; "list" — какие стоят
+function alarm(arg) {
+  const [spec, ...rest] = String(arg || '').split('|');
+  const s = spec.trim().toLowerCase();
+  const items = store.get().items;
+  const alarms = items.filter((r) => r.alarm);
+  if (/^(cancel|отмен|удал|выключ)/.test(s)) {
+    store.save({ items: items.filter((r) => !r.alarm) });
+    return alarms.length
+      ? { ok: true, speak: `Отменил ${alarms.length === 1 ? 'будильник' : 'все будильники'}, сэр.` }
+      : { ok: true, speak: 'Будильников нет, сэр.' };
+  }
+  if (!s || /^(list|какие|список)/.test(s)) {
+    if (!alarms.length) return { ok: true, speak: 'Будильников нет, сэр.' };
+    return { ok: true, speak: `Будильник ${alarms.map((r) => when(r)).join('; ')}.` };
+  }
+  const radio = rest
+    .join('|')
+    .trim()
+    .replace(/^радио\s*/i, '')
+    .slice(0, 80);
+  const minutes = s.match(/^in\s+(\d+)/)?.[1];
+  const r = minutes ? { at: Date.now() + Number(minutes) * 60_000 } : parse(`${s}|будильник`);
+  if (r.error) return { ok: false, message: r.error.replace('напоминание', 'будильник') };
+  if (minutes && (minutes < 1 || minutes > 24 * 60))
+    return { ok: false, message: 'Будильник можно поставить на время до суток вперёд, сэр.' };
+  const id = items.reduce((m, x) => Math.max(m, x.id), 0) + 1;
+  const item = {
+    id,
+    alarm: true,
+    text: 'будильник',
+    at: r.at,
+    ...(r.daily && { daily: true }),
+    ...(r.weekdays && { weekdays: true }),
+    ...(radio && { radio }),
+  };
+  items.push(item);
+  store.save();
+  return { ok: true, speak: `Будильник ${when(item)}${radio ? `, разбужу радио ${radio}` : ''}.` };
+}
+
+// «Разбуди меня в семь», «будильник на шесть сорок пять по будням», «разбуди в семь под радио Маяк»,
+// «отмени будильник», «какие будильники» — без модели. Время — словами или цифрами (lib/clock.js)
+function quick(text) {
+  const t = String(text)
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[?!.,;:«»"]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!/будильник|разбуди/.test(t)) return null;
+  const plan = (arg) => ({ addressed: true, say: '', actions: [{ tool: 'alarm', arg }] });
+  if (/^(отмени|удали|убери|сними|выключи)( все)? будильник/.test(t)) return plan('cancel');
+  if (/какие (у меня )?будильник|на (сколько|какое время) (стоит |поставлен )?будильник|есть ли будильник/.test(t)) return plan('list');
+  const radio = t.match(/(?:под|с) (?:радио )?(.+)$|радио (.+)$/);
+  const station = radio ? (radio[1] || radio[2]).replace(/ (по будням|каждый день|в будни).*$/, '').trim() : '';
+  const head = radio ? t.slice(0, radio.index) : t;
+  const repeat = /по будням|в будни|по рабочим/.test(t)
+    ? 'weekdays '
+    : /каждый день|ежедневно|каждое утро/.test(t)
+      ? 'daily '
+      : /завтра/.test(t)
+        ? 'tomorrow '
+        : '';
+  const seconds = /через/.test(head) ? durationFromText(head) : null;
+  if (seconds) return plan(`in ${Math.round(seconds / 60)}${station ? `|радио ${station}` : ''}`);
+  const clock = parseClock(head);
+  if (!clock) return null; // время не названо или сложное — разберёт модель
+  return plan(`${repeat}${formatClock(clock)}${station ? `|радио ${station}` : ''}`);
+}
+
 module.exports = {
   id: 'reminders',
   needs: ['now'],
-  title: 'таймер «через N минут», напоминания на время и дату, каждый день, каждые N минут; список и «отмени напоминание»',
+  title: 'таймер «через N минут», напоминания на время и дату, каждый день, каждые N минут; будильник (можно под радио); список и отмена',
+  quick,
   keywords: [
     'таймер',
     'засеки',
@@ -155,6 +248,7 @@ module.exports = {
   rules: [
     'Напоминание через N минут — timer; на конкретное время или дату, или повторяющееся — remind_at (дату считай от текущей).',
     'reminders "cancel …" — только если прямо просят отменить напоминание; «забудь про …» — это память (forget).',
+    '«Разбуди меня», «будильник» — alarm (звенит, пока не выключат), а не remind_at.',
   ],
   tools: [
     {
@@ -192,6 +286,21 @@ module.exports = {
       run: async (arg) => add(arg),
     },
     {
+      name: 'alarm',
+      llmArg: true,
+      use: 'будильник: разбудить в нужное время, сигналом или радио; какие стоят; отменить',
+      arg: '"ЧЧ:ММ" (ближайшее), "tomorrow ЧЧ:ММ", "daily ЧЧ:ММ", "weekdays ЧЧ:ММ" (по будням), "in МИНУТЫ"; через "|радио СТАНЦИЯ" — будить радио; "list"; "cancel"',
+      examples: [
+        ['разбуди меня в семь', { addressed: true, say: '', actions: [{ tool: 'alarm', arg: '07:00' }] }],
+        [
+          'поставь будильник на шесть тридцать по будням под радио маяк',
+          { addressed: true, say: '', actions: [{ tool: 'alarm', arg: 'weekdays 06:30 | радио маяк' }] },
+        ],
+      ],
+      speaks: true,
+      run: async (arg) => alarm(arg),
+    },
+    {
       name: 'reminders',
 
       llmArg: true,
@@ -222,4 +331,5 @@ module.exports = {
   when,
   pending: () => timers.size,
   _reset: () => (store = createStore(null, '', { items: [] })),
+  _tick: (ctx) => tick(ctx),
 };

@@ -39,12 +39,19 @@ function parseResults(html) {
   return out;
 }
 
-async function searchVideos(query) {
+// Поиск; сбой сети или пустая выдача (YouTube иногда отдаёт страницу без данных) — ещё одна попытка
+async function searchVideos(query, { attempts = 2 } = {}) {
   // sp=EgIQAQ%3D%3D — фильтр «только видео»
   const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIQAQ%253D%253D`;
-  const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(8000) });
-  if (!res.ok) return [];
-  return parseResults(await res.text());
+  for (let i = 1; ; i++) {
+    try {
+      const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(8000) });
+      const found = res.ok ? parseResults(await res.text()) : [];
+      if (found.length || i >= attempts) return found;
+    } catch (err) {
+      if (i >= attempts) throw err;
+    }
+  }
 }
 
 // Лучшее видео для прослушивания: без шортсов (< 60 с) и без многочасовых записей, если есть выбор
@@ -53,6 +60,7 @@ function pickForListening(videos, { mix = false } = {}) {
   return normal[0] || videos.find((v) => v.seconds >= 60) || videos[0] || null;
 }
 
-const watchUrl = (id) => `https://www.youtube.com/watch?v=${id}`;
+// similar — открыть в режиме микса (list=RD…): после этой песни YouTube сам играет похожие
+const watchUrl = (id, { similar = false } = {}) => `https://www.youtube.com/watch?v=${id}${similar ? `&list=RD${id}` : ''}`;
 
-module.exports = { searchVideos, parseResults, pickForListening, watchUrl };
+module.exports = { searchVideos, pickForListening, watchUrl };

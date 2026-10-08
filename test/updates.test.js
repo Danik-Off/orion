@@ -59,12 +59,13 @@ test('что нового: частые фразы — без модели', () 
 });
 
 test('что нового: после обновления спрашивает и рассказывает; при первой установке и без обновления — молчит', async () => {
-  const run = async (lastVersion, answer = true) => {
+  const run = async (lastVersion, answer = true, dataDir) => {
     const saved = [];
     const said = [];
     const asked = [];
     const ctx = {
       config: { lastVersion },
+      dataDir,
       saveSettings: (p) => saved.push(p),
       confirm: async (q) => (asked.push(q), answer),
       say: (t) => said.push(t),
@@ -82,6 +83,16 @@ test('что нового: после обновления спрашивает 
   assert.match(r.said[0], new RegExp(`В версии ${version.replace(/\./g, '\\.')}:`));
   r = await run('0.0.1', false);
   assert.equal(r.said.length, 0, 'отказались — не рассказывать');
+
+  // Обновились с версии, которая не запоминала lastVersion (0.3.0): журнал старше запуска — рассказать про текущую
+  const dir = tmp();
+  fs.writeFileSync(path.join(dir, 'actions.log'), `${JSON.stringify({ t: '2026-01-01T00:00:00Z', input: 'привет' })}\n`);
+  r = await run(undefined, true, dir);
+  assert.equal(r.asked.length, 1, 'журнал есть — это обновление, а не установка');
+  assert.ok(r.said[0].startsWith(`В версии ${version}:`));
+  assert.doesNotMatch(r.said[0], /В версии 0\.3\.0/, 'старые версии не пересказывает');
+  fs.writeFileSync(path.join(dir, 'actions.log'), `${JSON.stringify({ t: new Date().toISOString() })}\n`);
+  assert.equal(updates._test.usedBefore(dir), false, 'журнал начат в этом запуске — установка');
 });
 
 test('обновление: в вопросе «Хотите обновить?» — коротко, что нового (из описания релиза на GitHub)', () => {

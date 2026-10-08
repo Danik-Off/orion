@@ -460,3 +460,13 @@ test('программы: похожие по звучанию названия 
   assert.equal(score('кот', 'Калькулятор'), 0, 'короткие слова не притягиваются');
   assert.ok(score('проводник', 'Проводник') > score('продник', 'Проводник'), 'точное совпадение — выше');
 });
+
+test('router: N — навык, выученный маленькой моделью версии N: с прежней версией его фразы у большой', () => {
+  const skill = { id: 'probe_new', router: 2, keywords: ['зонд'], tools: [{ name: 'probe_new', use: 'зонд', run: async () => ({ ok: true }) }] };
+  const make = (router) =>
+    createSkillRegistry([skill], { config: { router, skills: {} }, ctx: {}, audit: () => {}, platform: 'win32' });
+  assert.equal(make({}).external('запусти зонд'), 'probe_new', 'по умолчанию — v1');
+  assert.equal(make({ release: 'models-router-v1' }).external('запусти зонд'), 'probe_new');
+  assert.equal(make({ release: 'models-router-v2' }).external('запусти зонд'), null);
+  assert.equal(make({ version: 3 }).external('запусти зонд'), null);
+});

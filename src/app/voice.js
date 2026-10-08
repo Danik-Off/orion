@@ -250,7 +250,8 @@ function createVoice({ app, config, modelsDir, dataDir, services, ui, ipc }) {
 
   return {
     ready,
-    reload: load, // установщик докачал модели речи — подключить
+    // Установщик докачал или обновление заменило модели речи — подключить; → что загрузилось
+    reload: () => (load(), { stt: modules.speech.stt, tts: modules.speech.tts, secondPass: !!modules.speech.secondPass }),
     resolvePerson,
     peopleInfo,
     untilQuiet: quiet.untilQuiet,

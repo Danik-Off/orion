@@ -1,25 +1,26 @@
 // Набор для публикуемой модели — без личного: город, имена и прочее из журнала заменяются в каждом примере
 // другими (в том же падеже: меняется основа, окончание остаётся). Веса запоминают частые слова — без этой
 // замены дообученная модель «знает» город и имя того, кто её обучал.
-//   npm run router-anonymize -- --city Липецк --name Данил        → data/router-public/{train,val}.jsonl
+//   npm run router-anonymize -- --city <ваш город> --name <ваше имя>        → data/router-public/{train,val}.jsonl
 //   затем: python scripts/router-train.py --data data/router-public …
 // Город из config.json (city) и имена людей из speaker.people добавляются сами.
 const fs = require('node:fs');
 const path = require('node:path');
+const { projectConfigFile } = require('../src/app/paths');
 
 const root = path.join(__dirname, '..');
 const arg = (name) => process.argv.flatMap((a, i) => (a === `--${name}` ? [process.argv[i + 1]] : []));
 const from = arg('from')[0] || path.join(root, 'data', 'router');
 const to = arg('to')[0] || path.join(root, 'data', 'router-public');
 
-// Подмены: основы на согласную — окончания падежей подходят как есть (Липецк-е → Воронеж-е, Данил-у → Артём-у)
+// Подмены: основы на согласную — окончания падежей подходят как есть (Тамбов-е → Воронеж-е, Олег-у → Артём-у)
 const CITIES = ['Воронеж', 'Саратов', 'Тамбов', 'Новосибирск', 'Екатеринбург', 'Омск', 'Томск', 'Курск', 'Брянск', 'Иркутск'];
 const NAMES = ['Артём', 'Иван', 'Олег', 'Максим', 'Роман', 'Денис', 'Степан', 'Глеб', 'Тимур', 'Руслан'];
 
 function personal() {
   const words = { city: arg('city'), name: arg('name') };
   try {
-    const config = JSON.parse(fs.readFileSync(path.join(root, 'config.json'), 'utf8'));
+    const config = JSON.parse(fs.readFileSync(projectConfigFile(root), 'utf8'));
     if (config.city) words.city.push(config.city);
     for (const p of config.speaker?.people || []) if (p.name) words.name.push(p.name);
   } catch {}

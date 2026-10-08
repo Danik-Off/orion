@@ -248,3 +248,35 @@ test('без большой модели: быстрые команды рабо
   await withCloud.reset();
   assert.match(r.say, /не выходит даже свет/, 'облако подстраховывает');
 });
+
+test('маленькая модель: фраза для сервера MCP — сразу большой модели, сервер поднимается заранее', async () => {
+  const { createRouter } = require('../src/core/router');
+  const r = await routerServer(() => ({
+    content: '<start_function_call>call:search{arg:<escape>x<escape>}',
+    logprobs: tokens('call:search{arg:x}'),
+  }));
+  try {
+    const { skills, ctx } = makeRegistry();
+    let warmed = 0;
+    skills.add([
+      {
+        id: 'mcp_notion',
+        mcp: 'notion',
+        title: 'Notion: найти, прочитать страницы',
+        keywords: ['notion', 'ноушн'],
+        prewarm: () => warmed++,
+        tools: [{ name: 'notion__search', use: 'поиск в Notion', arg: 'строка', llmArg: true, run: async () => ({ ok: true }) }],
+      },
+    ]);
+    const config = { ...ctx.config, router: { ...ctx.config.router, enabled: true, model: 'orion-router-q8_0.gguf' } };
+    const router = createRouter({ config, server: r.server, skills, dataDir: tmp(), audit: () => {} });
+    assert.equal(await router.route('найди в ноушн план на неделю'), null, 'не взяла — передала большой');
+    assert.equal(r.requests.length, 0, 'маленькую модель даже не спрашивали');
+    assert.equal(warmed, 1, 'сервер поднимается, пока думает большая');
+    // Обычная фраза — как раньше, через маленькую модель
+    await router.route('найди в интернете рецепт борща');
+    assert.equal(r.requests.length, 1);
+  } finally {
+    r.close();
+  }
+});

@@ -3,6 +3,8 @@
 Порядок:
   npm run router-dataset -- --paraphrase 6     # data/router/{train,val}.jsonl из планов большой модели
   python scripts/router-train.py               # обучение → models/llm/orion-router-q8_0.gguf
+  python scripts/router-train.py --init models/llm/orion-router-q8_0.gguf --lr 2e-5 --epochs 3
+                                               # доучивание: старт с весов прошлой версии (из её GGUF), а не с исходной
   npm run router-eval -- --model orion-router-q8_0.gguf
   затем в config.json: "router": { "enabled": true, "model": "orion-router-q8_0.gguf" }
 
@@ -47,6 +49,7 @@ def args():
     p.add_argument("--batch", type=int, default=2)
     p.add_argument("--accum", type=int, default=4)  # словарь Gemma — 262 тыс. токенов: логиты большого пакета не влезают в память
     p.add_argument("--max-len", type=int, default=1536)
+    p.add_argument("--init", default="")  # GGUF прошлой версии: доучивать её, а не исходную FunctionGemma
     p.add_argument("--no-gguf", action="store_true")
     p.add_argument("--convert-only", action="store_true")  # только перевести уже обученную модель (--out) в GGUF
     return p.parse_args()
@@ -116,7 +119,14 @@ def main():
     print(f"Примеров: обучение {len(train_rows)}, проверка {len(val_rows)}")
 
     tok = AutoTokenizer.from_pretrained(BASE)
-    model = AutoModelForCausalLM.from_pretrained(BASE, dtype=torch.bfloat16, attn_implementation="eager")
+    if a.init:
+        # Веса из GGUF (q8_0) распаковываются в обычные float — дальше обучение как с исходной
+        init = Path(a.init)
+        model = AutoModelForCausalLM.from_pretrained(str(init.parent), gguf_file=init.name, dtype=torch.float32, attn_implementation="eager")
+        model = model.to(torch.bfloat16)
+        print(f"Доучиваю: {init.name}")
+    else:
+        model = AutoModelForCausalLM.from_pretrained(BASE, dtype=torch.bfloat16, attn_implementation="eager")
     train = [encode(tok, r, a.max_len) for r in train_rows]
     val = [encode(tok, r, a.max_len) for r in val_rows]
     call = next(i for i, r in enumerate(train_rows) if "tool_calls" in r["messages"][-1])

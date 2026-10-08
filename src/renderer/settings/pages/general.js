@@ -1,18 +1,27 @@
 // Основное: как зовут ассистента, где он находится, как его позвать
-import { text, hotkey } from '../rows.js';
+import { text, hotkey, toggle } from '../rows.js';
 
 export default {
   id: 'general',
   group: 'assistant',
   title: 'Основное',
   icon: 'general',
-  description: 'Имя, город и горячая клавиша.',
+  description: 'Имя, город, горячая клавиша и мини-плеер радио.',
   sections: [
     {
       rows: [
         text('name', 'Имя ассистента', { hint: 'На него же откликается голосом. После перезапуска.', maxLength: 20 }),
         text('city', 'Город', { hint: 'Для погоды и местного времени.', maxLength: 60 }),
         hotkey('hotkey', 'Горячая клавиша', { hint: 'Нажмите на поле, затем нужное сочетание.', keywords: 'сочетание клавиш вызов' }),
+      ],
+    },
+    {
+      title: 'Радио',
+      rows: [
+        toggle('radio.player.show', 'Мини-плеер, пока играет радио', {
+          hint: 'Маленькое окно в углу экрана. Перетащите его в любой угол или на другой экран — запомнится.',
+          keywords: 'радио плеер окно угол',
+        }),
       ],
     },
   ],

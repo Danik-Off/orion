@@ -89,7 +89,7 @@ const DEFAULTS = {
     // always — вообще все команды только от хозяина
     speaker: {
       model: '3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx',
-      threshold: 0.42, // для голосов без калибровки; при записи порог подбирается под голос и микрофон
+      threshold: 0.38, // для голосов без калибровки; при записи порог подбирается под голос и микрофон
       require: 'followup',
     },
   },

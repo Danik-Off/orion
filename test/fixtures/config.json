@@ -1,6 +1,6 @@
 {
   "name": "Орион",
-  "city": "Липецк",
+  "city": "Казань",
   "ollamaUrl": "http://127.0.0.1:11434",
   "model": "qwen3.5:4b",
   "think": false,

@@ -5,7 +5,6 @@ models/
 data/
 voice-check/
 wake-eval/
-voice-samples/
 src/assets/
 test/fixtures/
 package-lock.json
@@ -15,3 +14,4 @@ package-lock.json
 .github/
 # пишет само приложение при сохранении настроек
 config.json
+config.local.json

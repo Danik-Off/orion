@@ -72,7 +72,7 @@ export default {
         select('model', 'Модель', (state) => state.models.map((m) => [m, m]), {
           when: local,
           hint: (v) =>
-            v.backend === 'ollama' ? 'Модели, установленные в Ollama.' : 'Скачать — в «Компонентах»; свою — файлом .gguf в models/llm.',
+            v.backend === 'ollama' ? 'Модели, установленные в Ollama.' : 'Скачанные. Другие — в разделе «Модели на компьютере».',
         }),
         text('ollamaUrl', 'Адрес Ollama', { when: (v) => local(v) && v.backend === 'ollama', placeholder: 'http://127.0.0.1:11434' }),
       ],

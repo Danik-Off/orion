@@ -162,7 +162,6 @@ module.exports = {
   closeProcessWindows,
   minimizeAll,
   defaultBrowserProcess,
-  BROWSERS,
 };
 
 // Вставить буфер обмена в активное окно (Ctrl+V) — для диктовки текста

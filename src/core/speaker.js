@@ -4,6 +4,10 @@
 // так устойчивее к разной интонации, громкости и длине фраз. Сравнение — со средним трёх лучших образцов.
 // Порог подбирается при записи под конкретный голос и микрофон: насколько фразы человека похожи между собой
 // и насколько он похож на остальных записанных (похожие голоса — порог выше, чтобы не путать).
+// Обычный порог — замер npm run speaker-eval (VoxCeleb1, 40 человек, запись 4 фразы, проверка — короткие
+// фразы других дней): при 0,38 своих не узнаёт ~3%, чужих принимает ~0,7%. Прежний потолок 0,55 не узнавал
+// треть своих фраз — так и было в жизни: голос, записанный за один раз, похож сам на себя сильнее, чем
+// на себя же в другой день, и порог по сходству записи выходил завышенным.
 // Уверенные совпадения добавляются как новые образцы — со временем узнавание улучшается.
 //
 // Собеседник диалога: пока идёт разговор, фраза сравнивается ещё и с фразами этого же разговора —
@@ -21,8 +25,9 @@ const MAX_TEMPLATES = 12; // записанные при регистрации 
 const LEARN_MARGIN = 0.12; // выучить новый образец, если совпадение уверенно выше порога
 const AMBIGUITY = 0.05; // два человека почти одинаково похожи — не угадываем
 const THRESHOLD_MIN = 0.3;
-const THRESHOLD_BASE_MAX = 0.55; // обычный потолок порога
+const THRESHOLD_BASE = 0.38; // обычный порог (см. замер выше)
 const THRESHOLD_MAX = 0.6; // выше — только если есть похожий записанный голос
+const CALIBRATION = 2; // версия правила порога: записи со старым правилом пересчитываются при загрузке
 const IMPOSTOR_MARGIN = 0.08; // порог выше сходства с чужими записанными голосами хотя бы на столько
 const PARTNER_SLACK = 0.06; // собеседнику диалога прощаем чуть меньшее сходство
 const SESSION_VECTORS = 6; // сколько фраз текущего разговора помнить
@@ -63,7 +68,8 @@ function calibrate(templates, fallback, impostor) {
       ),
     ),
   );
-  let threshold = Math.min(THRESHOLD_BASE_MAX, typical - 0.2);
+  // Запись шумная или неровная (свои фразы похожи слабо) — порог ниже обычного
+  let threshold = Math.min(THRESHOLD_BASE, typical - 0.2);
   if (impostor != null) threshold = Math.max(threshold, Math.min(impostor + IMPOSTOR_MARGIN, typical - 0.08));
   return round(Math.min(THRESHOLD_MAX, Math.max(THRESHOLD_MIN, threshold)));
 }
@@ -118,6 +124,21 @@ function createSpeakerId({ modelsDir, dataDir, config, log = () => {} }) {
       JSON.stringify(people.map(({ embedding, ...p }) => ({ ...p, templates: p.templates.map((t) => Array.from(t)) }))),
     );
   if (people.some((p) => !p.templates.length)) people = people.filter((p) => p.templates.length);
+  // Порог по старому правилу — пересчитать по образцам записи (первые ENROLL_PHRASES), перезаписывать голос не нужно
+  if (people.some((p) => p.cal !== CALIBRATION)) {
+    for (const p of people.filter((x) => x.cal !== CALIBRATION)) {
+      const own = p.templates.slice(0, ENROLL_PHRASES);
+      const others = people.filter((o) => o !== p);
+      const impostor = others.length ? Math.max(...others.map((o) => median(own.map((t) => personScore(o.templates, t))))) : null;
+      const before = p.threshold;
+      p.threshold = calibrate(own, config.threshold, impostor);
+      p.cal = CALIBRATION;
+      log(`порог голоса ${p.name || p.id}: ${before} → ${p.threshold} (новое правило)`);
+    }
+    try {
+      save();
+    } catch {}
+  }
 
   // Переход с самого старого формата (один отпечаток без имени)
   const legacy = path.join(dataDir, 'voiceprint.json');
@@ -256,7 +277,7 @@ function createSpeakerId({ modelsDir, dataDir, config, log = () => {} }) {
       const noises = phrases.map((x) => x.noise).filter((x) => typeof x === 'number');
       const noise = noises.length ? round(median(noises)) : undefined;
       let person = id && people.find((p) => p.id === id);
-      if (person) Object.assign(person, { templates, threshold, learned: 0, level, noise });
+      if (person) Object.assign(person, { templates, threshold, cal: CALIBRATION, learned: 0, level, noise });
       else {
         person = {
           id: crypto.randomUUID(),
@@ -264,6 +285,7 @@ function createSpeakerId({ modelsDir, dataDir, config, log = () => {} }) {
           honorific: 'сэр',
           templates,
           threshold,
+          cal: CALIBRATION,
           learned: 0,
           level,
           noise,

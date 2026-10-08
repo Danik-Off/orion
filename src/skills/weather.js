@@ -52,7 +52,7 @@ const places = new Map(); // город (как спросили) → место
 const forecasts = new Map(); // "широта,долгота" → { at, data } или { pending }
 const asked = new Map(); // "широта,долгота" → { place, at } — что обновлять в фоне
 
-// «в Липецке», «Казани» → пробуем как есть, потом без падежного окончания
+// «в Казани», «Казани» → пробуем как есть, потом без падежного окончания
 async function geocode(city) {
   const key = city.toLowerCase().replace(/ё/g, 'е').trim();
   if (places.has(key)) return places.get(key);
@@ -194,7 +194,7 @@ async function forecast(arg, defaultCity) {
   );
 }
 
-// Город: собеседника (профиль, затем факты «Живёт в Липецке») → дома из общей памяти → из настроек
+// Город: собеседника (профиль, затем факты «Живёт в Казани») → дома из общей памяти → из настроек
 function homeCity(ctx) {
   // собеседник, потом общая память (где находится ассистент), потом настройки
   for (const mem of [ctx.memory, ctx.shared].filter(Boolean)) {

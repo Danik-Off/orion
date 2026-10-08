@@ -1,4 +1,4 @@
-/* global createMic, createSpeaker, playChime, isStopForOrion */
+/* global createMic, createSpeaker, playChime, isStopForOrion, createRadio, createAlarm */
 const $ = (s) => document.querySelector(s);
 const core = $('#core');
 const log = $('#log');
@@ -29,11 +29,46 @@ let hideTimer = null;
 let errorUntil = 0;
 let followUp = false;
 let pendingConfirm = null;
+let pendingQuestion = null; // вопрос со свободным ответом (знакомство: «в каком вы городе?»)
+const awaitingAnswer = () => !!pendingConfirm || !!pendingQuestion;
 let talkingTo; // с кем сейчас разговор: id человека, null — гость, undefined — разговора нет
 let ignoredInRow = 0; // фразы подряд, которые модель сочла обращёнными не к Ориону
 let wizard = null; // мастер записи голоса: { step, phrases, stage: 'phrases'|'name'|'honorific', name, id }
 
 const isListening = () => Date.now() < listenUntil || hearing;
+
+// Радио — в этом окне (src/renderer/radio.js); ядро говорит, что включить, окно сообщает, что играет
+const radio = createRadio({ report: (state) => window.jarvis.radioState(state) });
+// Будильник (src/renderer/alarm.js): звенит, пока не выключат; выключить — кнопкой или голосом без имени
+const alarm = createAlarm({
+  radio,
+  panel: $('#alarm'),
+  label: $('#alarm-label'),
+  snoozeButton: $('#alarm-snooze'),
+  stopButton: $('#alarm-stop'),
+  onSnooze: (payload, minutes) => {
+    window.jarvis.alarmSnooze(payload, minutes);
+    setStatus(`Разбужу через ${minutes} мин.`);
+  },
+  onChange: (ringing) => {
+    if (ringing) {
+      showOrbIfHidden();
+      listen(60_000, 'followup'); // «стоп» и «ещё пять минут» — без имени
+    }
+    refreshState();
+  },
+});
+window.jarvis.onAlarm((msg) => alarm.ring(msg));
+
+window.jarvis.onRadio(({ action, station, volume } = {}) => {
+  if (action === 'play' && station?.url) {
+    if (volume != null) radio.setVolume(volume);
+    radio.play(station);
+  } else if (action === 'stop') radio.stop();
+  else if (action === 'pause') radio.pause();
+  else if (action === 'resume') radio.resume();
+  else if (action === 'volume') radio.setVolume(volume);
+});
 
 function refreshState() {
   let s = mic.isOn() ? 'idle' : 'off';
@@ -43,6 +78,8 @@ function refreshState() {
   if (speaking) s = 'speaking';
   if (Date.now() < errorUntil) s = 'error';
   core.dataset.state = s;
+  // Радио тише, пока Орион слушает команду или говорит
+  radio.duck(s === 'listening' || s === 'hearing' || s === 'speaking');
 }
 
 // Подсказка «Скажите …» видна только в полном окне, в плашке она лишняя
@@ -108,7 +145,7 @@ function showOrbIfHidden() {
 
 // Закрыть полное окно. Если диалог ещё идёт (думает, говорит, ждёт продолжения или ответа «да/нет»),
 // окно сворачивается в плашку — иначе ответ пришёл бы в скрытое окно и его не было бы видно
-const dialogActive = () => busy || speaking || isListening() || !!pendingConfirm;
+const dialogActive = () => busy || speaking || isListening() || awaitingAnswer();
 function hideWindow() {
   if (mode === 'full' && dialogActive()) return window.jarvis.presence('collapse');
   window.jarvis.presence('hidden');
@@ -198,6 +235,7 @@ function endDialog() {
 
 // «Орион, стоп»: замолчать, бросить запрос и перестать слушать — разговор окончен, снова ждём имени
 function stopAll() {
+  alarm.stop(); // «Орион, стоп» выключает и будильник
   followUp = false;
   if (busy) cancelThinking();
   interrupt({ end: true });
@@ -249,6 +287,9 @@ function isStranger(voice, source) {
 // (\b не работает с кириллицей — конец слова это пробел или конец строки)
 const YES = /^(да|ага|подтверждаю|конечно|давай|выполняй|ок|окей)(\s|$)/;
 const NO = /^(нет|отмена|отмени|не надо|стоп)(\s|$)/;
+// Ответ в конце фразы: человек повторил просьбу и подтвердил — «выключи компьютер через час, да»
+const YES_END = /(^|\s)(да|ага|подтверждаю|конечно|давай|выполняй)$/;
+const NO_END = /(^|\s)(нет|не надо|отмена)$/;
 
 // STOP_WORDS и isStopForOrion — в commands.js
 
@@ -283,8 +324,12 @@ window.jarvis.onHeard(({ partial, final, command, voice }) => {
   hearing = false;
   refreshState(); // фраза договорена — реактор больше не в режиме распознавания
 
+  // Звенит будильник: «стоп», «встаю», «ещё пять минут» — ему, без имени и от любого голоса
+  if (alarm.ringing() && alarm.heard(final)) return refreshState();
+  // Ждём ответ на вопрос («в каком вы городе?») — фраза и есть ответ (с именем — без него)
+  if (pendingQuestion && !isStranger(voice, 'followup')) return answerQuestion(command || final);
   if (pendingConfirm) {
-    const answer = YES.test(final) ? true : NO.test(final) ? false : null;
+    const answer = YES.test(final) || YES_END.test(final) ? true : NO.test(final) || NO_END.test(final) ? false : null;
     if (answer !== null && !isStranger(voice, 'followup')) return answerConfirm(answer);
   }
   // «Стоп», пока ждёт продолжения разговора (с именем или без) — закончить разговор и не слушать
@@ -377,7 +422,7 @@ const speakerHooks = {
     else {
       // Ответ не ждёт продолжения — диалог окончен. Но если Ориона перебили (клавишей, именем, набранным
       // текстом), разговор продолжается: сброс контекста здесь терял смысл следующей фразы
-      if (!pendingConfirm && !bargingIn && !interrupting && !previewing) endDialog();
+      if (!awaitingAnswer() && !bargingIn && !interrupting && !previewing) endDialog();
       scheduleOrbHide();
     }
     followUp = false;
@@ -438,7 +483,7 @@ let interim = false; // звучит заготовка «Сейчас поищ�
 // Медленный навык: сразу короткая фраза голосом. Не поверх речи человека и не вместо уже звучащего ответа
 window.jarvis.onFiller(({ id, text }) => {
   if (!live || id !== live.id || id !== askSeq || !busy || live.stream || !text) return;
-  if (hearing || speaking || !voiceOn || wizard || pendingConfirm) return;
+  if (hearing || speaking || !voiceOn || wizard || awaitingAnswer()) return;
   bargeIn = true;
   interim = true;
   speaker.speak(text);
@@ -449,7 +494,7 @@ window.jarvis.onSayPart(({ id, text }) => {
   if (!live.stream) {
     // Человек ещё договаривает, звук выключен, ждём «да/нет» или идёт запись голоса — не начинаем:
     // ответ прозвучит целиком в конце, как обычно
-    if (hearing || !voiceOn || wizard || pendingConfirm) {
+    if (hearing || !voiceOn || wizard || awaitingAnswer()) {
       live.blocked = true;
       return;
     }
@@ -579,6 +624,7 @@ $('#form').addEventListener('submit', (e) => {
   e.preventDefault();
   const text = input.value;
   input.value = '';
+  if (pendingQuestion) return answerQuestion(text); // набранный ответ на вопрос Ориона
   submit(text, 'text');
 });
 
@@ -607,6 +653,34 @@ window.jarvis.onConfirm(({ id, text }) => {
 });
 $('#confirm-yes').addEventListener('click', () => answerConfirm(true));
 $('#confirm-no').addEventListener('click', () => answerConfirm(false));
+
+// --- Вопрос со свободным ответом: голосом (следующая фраза без имени) или текстом ------------------
+
+function answerQuestion(text) {
+  if (!pendingQuestion) return;
+  const t = typeof text === 'string' ? text.trim() : '';
+  window.jarvis.replyQuestion(pendingQuestion, t || null);
+  pendingQuestion = null;
+  hidePanel();
+  if (t) addMsg('user', t);
+  stopListening();
+}
+
+window.jarvis.onQuestion(({ id, text }) => {
+  pendingQuestion = id;
+  showPanel(
+    text,
+    [
+      ['Ответить', (v) => answerQuestion(v), true],
+      ['Пропустить', () => answerQuestion(null)],
+    ],
+    { placeholder: 'Ответ голосом или здесь', onEnter: (v) => answerQuestion(v) },
+  );
+  speak(text, { expectReply: true });
+});
+
+// Ядро предлагает записать голос (знакомство) — тот же мастер, что у кнопки с человечком
+window.jarvis.onEnrollOffer(() => !wizard && startWizard());
 
 // --- Люди: запись голоса, имя и обращение -------------------------------------------------
 
@@ -822,7 +896,7 @@ async function wizardHeard(text) {
     return r.done ? promptName() : promptPhrase();
   }
   if (wizard.stage === 'name') {
-    // «меня зовут Данил» → «Данил»
+    // «меня зовут Саша» → «Саша»
     const n = text
       .replace(/^(меня зовут|зови меня|называй меня|я)\s+/i, '')
       .split(/\s+/)

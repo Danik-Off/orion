@@ -2,6 +2,9 @@
 //   npm run router-eval                          — модель из config.router.model
 //   npm run router-eval -- --model файл.gguf     — другая модель из models/llm (например, только что дообученная)
 //   npm run router-eval -- --with-tools          — описания инструментов в запросе (исходная FunctionGemma)
+//   npm run router-eval -- --system / --no-system — со строкой «You are a model that can do function calling…» или без
+//   npm run router-eval -- --cases файл.json     — другой контрольный набор (eval-holdout.json, eval-delegate.json)
+//   npm run router-eval -- --router-version 2    — версия модели для навыков с router: N (свой файл .gguf)
 //   npm run router-eval -- -v                    — показать все фразы
 // Исходы: «вызов» — готовый вызов, выполняется сразу; «навык» — модель назвала инструмент, аргумент пишет большая
 // по узкому промпту; «передал» — дальше полный разбор большой моделью.
@@ -9,6 +12,7 @@
 // вернёт пустой план, и фразу разберут полностью (потеряно время). Передать — не ошибка, а лишь потерянная скорость.
 const fs = require('node:fs');
 const path = require('node:path');
+const { projectConfigFile } = require('../src/app/paths');
 const Module = require('node:module');
 
 const originalLoad = Module._load;
@@ -27,7 +31,7 @@ const opt = (name, def) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] :
 const root = path.join(__dirname, '..');
 
 async function main() {
-  const config = loadConfig(path.join(root, 'config.json'));
+  const config = loadConfig(projectConfigFile(root));
   config.skills = {};
   // Порог уверенности — из настроек; таблица в конце показывает, что было бы при других
   const threshold = config.router.minConfidence ?? 0.95;
@@ -37,7 +41,9 @@ async function main() {
     collect: false,
     minConfidence: 0,
     toolsInPrompt: argv.includes('--with-tools') || undefined, // без ключа — само: исходной модели описания нужны
+    system: argv.includes('--system') ? true : argv.includes('--no-system') ? false : undefined, // системная строка в запросе
     model: opt('--model', config.router.model),
+    version: opt('--router-version') ? Number(opt('--router-version')) : config.router.version, // навыки с router: N
   };
   const skills = createSkillRegistry(require('../src/skills'), { config, ctx: { config }, audit: () => {} });
   await skills.init();

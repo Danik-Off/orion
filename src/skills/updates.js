@@ -3,9 +3,9 @@
 // После обновления при запуске сам предлагает рассказать, что изменилось (offer): прошлую версию помнит
 // в config.json → lastVersion. При первой установке не спрашивает — рассказывать не о чем.
 const notes = require('../lib/release-notes');
+const { usedBefore } = require('../lib/first-run');
 
 const current = () => require('../../package.json').version;
-
 function whatsNew(arg, { dir, version = current(), since } = {}) {
   const asked = String(arg || '').match(/\d+\.\d+(?:\.\d+)?/)?.[0];
   if (asked) {
@@ -43,6 +43,7 @@ function quick(text) {
 
 module.exports = {
   id: 'updates',
+  router: false, // маленькая модель этого навыка не знает — фразы о нём сразу большой
   title: 'что нового в моей версии, номер версии',
   keywords: ['что нового', 'что изменилось', 'поменялось', 'обновлени', 'верси', 'новенького'],
   needs: [],
@@ -72,12 +73,14 @@ module.exports = {
     const last = ctx.config.lastVersion;
     if (last === version) return;
     ctx.saveSettings({ lastVersion: version });
-    if (!last || notes.compare(version, last) < 0) return; // первая установка или откат — молчим
-    const list = notes.between(last, version);
+    if (last && notes.compare(version, last) < 0) return; // откат на старую версию — молчим
+    if (!last && !usedBefore(ctx.dataDir)) return; // первая установка — рассказывать не о чем
+    // Прошлая версия неизвестна (обновились с версии без lastVersion) — только про текущую
+    const list = last ? notes.between(last, version) : [notes.read(version)].filter(Boolean);
     if (!list.length) return;
     const yes = await ctx.confirm(`Я обновился до версии ${version}. Рассказать, что нового?`);
     ctx.audit?.({ updates: yes ? 'рассказал' : 'не стал', from: last, to: version });
     if (yes) ctx.say?.(notes.spoken(list));
   },
-  _test: { whatsNew },
+  _test: { whatsNew, usedBefore },
 };

@@ -8,13 +8,14 @@
 //   npm run voice-check -- --save                 — сохранить звук в voice-check/ (послушать)
 const fs = require('node:fs');
 const path = require('node:path');
+const { projectConfigFile } = require('../src/app/paths');
 const sherpa = require('sherpa-onnx-node');
 const { loadConfig } = require('../src/core/config');
 const { normalizeForSpeech } = require('../src/lib/speech-text');
 const { forSynth } = require('../src/lib/stress');
 
 const root = path.join(__dirname, '..');
-const config = loadConfig(path.join(root, 'config.json'));
+const config = loadConfig(projectConfigFile(root));
 const s = config.speech;
 const modelsDir = path.resolve(root, s.modelsDir || 'models');
 const args = process.argv.slice(2);

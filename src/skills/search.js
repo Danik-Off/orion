@@ -1,8 +1,16 @@
 // Поиск: ответ голосом по прочитанным страницам. Браузер — только если об этом попросили.
 const { research, wiki } = require('../lib/websearch');
 
+const ASK_FOR_MS = 20_000; // «найди в интернете» без продолжения — следующая фраза и есть запрос
+let awaitingQuery = 0;
+
 async function webSearch(query, ctx, request) {
-  if (!query) return { ok: false, message: 'Что именно искать, сэр?' };
+  // «Найди в интернете» без продолжения — переспросить; следующая фраза (в течение ASK_FOR_MS) и есть запрос
+  if (!query) {
+    awaitingQuery = Date.now();
+    return { ok: true, speak: 'Что найти в интернете, сэр?' };
+  }
+  awaitingQuery = 0;
   let { results, pages } = await research(query);
   if (!results.length) {
     // DuckDuckGo ограничил частые запросы — справка из Википедии
@@ -22,8 +30,41 @@ async function webSearch(query, ctx, request) {
   return { ok: true, speak, sources: results };
 }
 
+const norm = (text) =>
+  String(text)
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[?!.,;:«»"]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+// «Найди в интернете …», «поищи в сети …», «загугли …» — поиск сразу, без модели; запрос — всё после этих слов.
+// Без слов «в интернете» («найди файл», «найди рецепт») решает модель — это может быть поиск файлов.
+function quick(text) {
+  const t = norm(text);
+  // Без побочных эффектов: quick зовут и на недоговорённой фразе (проверка «договорил ли»). Ожидание запроса
+  // включает и выключает сам поиск, когда выполняется
+  if (awaitingQuery && Date.now() - awaitingQuery < ASK_FOR_MS && t && !/^(нет|не надо|отмена|ничего)$/.test(t))
+    return { addressed: true, say: '', actions: [{ tool: 'web_search', arg: t }] };
+  const where = '(?:в интернете|в инете|в сети|в гугле|в яндексе|онлайн)';
+  const m =
+    t.match(new RegExp(`^(?:найди|поищи|ищи|посмотри|узнай)(?: мне| пожалуйста)? ${where}(?: (?:про|о|об))?\\s*(.*)$`)) ||
+    t.match(/^(?:загугли|погугли|гугли)(?: про| о| об)?\s*(.*)$/);
+  if (m) {
+    const query = m[1].trim();
+    if (!query) {
+      return { addressed: true, say: '', actions: [{ tool: 'web_search', arg: '' }] };
+    }
+    return { addressed: true, say: '', actions: [{ tool: 'web_search', arg: query }] };
+  }
+  const show = t.match(/^(?:покажи|открой)(?: мне)? (?:в браузере|поиск в браузере)(?: про| о| об)?\s*(.+)$/);
+  if (show) return { addressed: true, say: 'Открываю поиск, сэр.', actions: [{ tool: 'browser_search', arg: show[1] }] };
+  return null;
+}
+
 module.exports = {
   id: 'search',
+  quick,
   needs: ['now', 'city'],
   title: 'ответ на конкретный вопрос из интернета: кто выиграл, сколько стоит, кто такой, что случилось; поиск в браузере',
   always: true, // запасной вариант для всего, что не нашлось по словам

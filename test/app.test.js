@@ -137,3 +137,35 @@ test('версия в окне: orionAssistent:версия(коммит) — и
   assert.equal(versionLabel('0.2.0', { buildInfo: missing, git: noGit }), 'orionAssistent:0.2.0(dev)');
   assert.match(versionLabel(), /^orionAssistent:\d+\.\d+\.\d+\((\w{7}|dev)\)$/, 'версия — из package.json');
 });
+
+test('настройки: установка — в папке данных; проект — config.local.json; проверочная копия — в своей папке', () => {
+  const { configFileFor } = require('../src/app/paths');
+  const copies = [];
+  const ensureUserConfig = (bundled, file) => (copies.push([bundled, file]), file);
+  const base = { root: '/proj', dataDir: '/data', ensureUserConfig };
+  assert.equal(configFileFor({ ...base, packaged: true }), path.join('/data', 'config.json'));
+  assert.equal(configFileFor({ ...base, packaged: false }), path.join('/proj', 'config.local.json'));
+  assert.equal(
+    configFileFor({ ...base, packaged: false, isolated: true }),
+    path.join('/data', 'config.json'),
+    'ORION_DATA_DIR не трогает настройки разработчика',
+  );
+  assert.ok(
+    copies.every(([bundled]) => bundled === path.join('/proj', 'config.json')),
+    'источник — шаблон проекта',
+  );
+});
+
+test('журнал: больше предела — старый уходит в .old.log, запись продолжается в новый', async () => {
+  const fs = require('node:fs');
+  const { createAudit } = require('../src/core/audit');
+  const dir = require('./helpers').tmp();
+  const file = path.join(dir, 'actions.log');
+  const audit = createAudit(file, { maxBytes: 2000 });
+  for (let i = 0; i < 200; i++) audit({ n: i, pad: 'x'.repeat(20) }); // 200-я строка — проверка размера
+  await new Promise((r) => setTimeout(r, 200));
+  assert.ok(fs.existsSync(path.join(dir, 'actions.old.log')), 'большой журнал переименован');
+  audit({ after: true });
+  await new Promise((r) => setTimeout(r, 100));
+  assert.match(fs.readFileSync(file, 'utf8'), /"after":true/, 'пишется в новый');
+});

@@ -7,6 +7,7 @@ import general from './general.js';
 import voice from './voice.js';
 import hearing from './hearing.js';
 import models from './models.js';
+import library from './library.js';
 import connections from './connections.js';
 import skills from './skills.js';
 import advanced from './advanced.js';
@@ -19,4 +20,4 @@ export const GROUPS = [
   { id: 'system', title: 'Система' },
 ];
 
-export const PAGES = [general, voice, hearing, models, connections, skills, advanced, components, about];
+export const PAGES = [general, voice, hearing, models, library, connections, skills, advanced, components, about];

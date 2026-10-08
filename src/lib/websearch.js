@@ -177,4 +177,4 @@ async function wiki(query, lang = 'ru') {
   };
 }
 
-module.exports = { research, searchWeb, wiki, isHttpUrl, isPublicUrl, extractMainText };
+module.exports = { research, wiki, isHttpUrl, isPublicUrl, extractMainText };

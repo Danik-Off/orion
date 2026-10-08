@@ -2,9 +2,9 @@ node_modules/
 models/
 dist/
 build/
-voice-samples/
 *.log
 voice-check/
 data/
 wake-eval/
 src/build-info.json
+config.local.json

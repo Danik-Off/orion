@@ -8,7 +8,9 @@ function createIpc(...windows) {
   const handle = (channel, fn) => ipcMain.handle(channel, (e, ...a) => (ours(e) ? fn(...a) : null));
   // Во все окна: ход установки виден и в разговоре, и в настройках
   const broadcast = (channel, ...args) => windows.forEach((w) => w.send(channel, ...args));
-  return { on, handle, broadcast };
+  // Окно, созданное позже остальных (мини-плеер радио: ему нужны ядро и настройки)
+  const add = (w) => windows.push(w);
+  return { on, handle, broadcast, add };
 }
 
 module.exports = { createIpc };

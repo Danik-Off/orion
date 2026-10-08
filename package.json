@@ -1,7 +1,7 @@
 {
   "name": "orion",
   "productName": "Orion",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "description": "Орион — локальный голосовой ассистент в духе джарвис. на Electron + Ollama,максимально простой и удобный в использовании. Поддержка русского языка.",
   "author": {
@@ -25,9 +25,10 @@
     "dist": "npm run icon && node scripts/build-info.js && electron-builder --publish never",
     "dist:dir": "npm run icon && node scripts/build-info.js && electron-builder --dir --publish never",
     "voice-check": "node scripts/voice-check.js",
-    "stress-eval": "node scripts/stress-eval.js",
+    "stress-eva": "node scripts/stress-eval.js",
     "stress-phrases": "node scripts/stress-phrases.js",
     "wake-eval": "node scripts/wake-eval.js",
+    "speaker-eval": "node scripts/speaker-eval.js",
     "router-dataset": "node scripts/router-dataset.js",
     "router-eval": "node scripts/router-eval.js",
     "router-anonymize": "node scripts/router-anonymize.js",

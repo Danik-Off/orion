@@ -29,4 +29,4 @@ function versionLabel(version = require('../../package.json').version, options) 
   return (cached ??= `${LABEL}:${version}(${commitHash()})`);
 }
 
-module.exports = { versionLabel, commitHash, BUILD_INFO };
+module.exports = { versionLabel, BUILD_INFO };

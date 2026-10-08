@@ -12,7 +12,7 @@ const releasesUrl = () =>
     .replace(/^git\+/, '')
     .replace(/\.git$/, '')}/releases/latest`;
 
-function startLifecycle({ electron, config, services, voice, setup, mcp, ui, settingsWindow, ipc, registerHotkey }) {
+function startLifecycle({ electron, config, services, voice, setup, mcp, updates, ui, settingsWindow, ipc, registerHotkey }) {
   const { app, session, shell, systemPreferences, globalShortcut } = electron;
   const { assistant, skills, audit, confirm } = services;
 
@@ -37,6 +37,7 @@ function startLifecycle({ electron, config, services, voice, setup, mcp, ui, set
 
   // Разговор и окно
   ipc.on('jarvis:confirm-reply', ({ id, ok } = {}) => services.answerConfirm(id, ok));
+  ipc.on('jarvis:question-reply', ({ id, text } = {}) => services.answerQuestion(id, text));
   ipc.handle('jarvis:open-link', (url) => isHttpUrl(url) && services.ctx.openExternal(url));
   ipc.on('jarvis:reset', () => (voice.forgetPartner(), assistant.reset()));
   ipc.on('jarvis:dialog-end', () => (voice.forgetPartner(), assistant.endSession('конец диалога')));
@@ -45,6 +46,9 @@ function startLifecycle({ electron, config, services, voice, setup, mcp, ui, set
     if (['full', 'orb', 'hidden'].includes(next)) ui.setMode(next);
   });
   ipc.on('jarvis:orb-height', (h) => ui.setOrbHeight(h));
+  ipc.on('jarvis:radio-state', (state) => services.radio.report(state));
+  // Будильник отложили («ещё 5 минут» или кнопкой) — позвонить снова
+  ipc.on('jarvis:alarm-snooze', ({ payload, minutes } = {}) => payload && services.alarmSnooze(payload, minutes));
 
   // Окно никогда не уходит на чужие страницы и не открывает новые окна.
   app.on('web-contents-created', (_e, contents) => {
@@ -64,7 +68,7 @@ function startLifecycle({ electron, config, services, voice, setup, mcp, ui, set
 
     await skills.init();
     assistant.warmup(); // после init: в промпте уже полные описания навыков
-    mcp?.start(); // серверы MCP подключаются в фоне; их инструменты добавятся, как только ответят
+    mcp?.start(); // навыки серверов MCP — сразу из кэша; сами серверы запустятся, когда понадобятся
     await ui.create();
     // При автозапуске вместе с системой — сразу в трей, иначе показать окно.
     ui.setMode(process.argv.includes('--hidden') ? 'hidden' : 'full');
@@ -77,6 +81,7 @@ function startLifecycle({ electron, config, services, voice, setup, mcp, ui, set
       await setup.offerBrain(); // «я могу стать умнее» — если большой модели ещё нет
       await skills.offer();
       if (config.updates?.notify !== false) setTimeout(() => updater.check(), 2000);
+      setTimeout(() => updates?.checkOnStart(), 10_000); // части Ориона — тихо, итог точкой на «Компонентах»
     });
 
     createTray({

@@ -32,6 +32,8 @@ async function power(arg, ctx, request = {}) {
   if (min < 0 || min > 24 * 60) return { ok: false, message: 'Можно от 0 минут до суток, сэр.' };
   const what = restart ? 'Перезагрузить' : 'Выключить';
   if (!(await ctx.confirm(`${what} компьютер через ${minutes(min)}?`))) return { ok: false, message: 'Отменено, сэр.' };
+  // Уже запланировано (повторили команду или назвали другое время) — Windows второе не примет: снять прежнее
+  await launch('shutdown.exe', ['/a']).catch(() => {});
   await launch('shutdown.exe', [restart ? '/r' : '/s', '/t', String(min * 60)]);
   return {
     ok: true,

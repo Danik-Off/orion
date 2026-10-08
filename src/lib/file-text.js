@@ -124,4 +124,4 @@ function readText(file) {
   return text ? { text } : { error: 'файл пустой' };
 }
 
-module.exports = { readText, READABLE, zipEntries, zipRead };
+module.exports = { readText };

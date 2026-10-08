@@ -65,7 +65,7 @@ function createPersonMemory(dir) {
     if (facts.length !== before) save(factsFile, facts);
   };
 
-  // arg: "city=Липецк" или "name=Саша"; пустое значение удаляет поле
+  // arg: "city=Казань" или "name=Саша"; пустое значение удаляет поле
   function setProfile(arg) {
     const m = String(arg).match(/^\s*(\w+)\s*=\s*(.*)$/);
     if (!m || !PROFILE_KEYS[m[1]]) {

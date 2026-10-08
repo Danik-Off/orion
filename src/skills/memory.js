@@ -40,8 +40,8 @@ module.exports = {
       examples: [
         ['меня зовут Саша', { addressed: true, say: 'Приятно познакомиться, Саша.', actions: [{ tool: 'profile', arg: 'name=Саша' }] }],
         [
-          'запомни, что я живу в Липецке',
-          { addressed: true, say: 'Запомнил, вы в Липецке.', actions: [{ tool: 'profile', arg: 'city=Липецк' }] },
+          'запомни, что я живу в Казани',
+          { addressed: true, say: 'Запомнил, вы в Казани.', actions: [{ tool: 'profile', arg: 'city=Казань' }] },
         ],
       ],
       run: async (arg, ctx) => ctx.memory.setProfile(arg),
@@ -69,8 +69,8 @@ module.exports = {
       arg: 'факт; город, где ты находишься: "city=Город"; обновить: "#о номер текст"',
       examples: [
         [
-          'запомни, что ты находишься в Липецке',
-          { addressed: true, say: 'Запомнил: я в Липецке.', actions: [{ tool: 'remember_shared', arg: 'city=Липецк' }] },
+          'запомни, что ты находишься в Казани',
+          { addressed: true, say: 'Запомнил: я в Казани.', actions: [{ tool: 'remember_shared', arg: 'city=Казань' }] },
         ],
         [
           'у нас дома живёт кот Барсик',

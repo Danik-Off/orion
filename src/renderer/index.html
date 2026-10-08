@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src https: http:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
     />
     <title>Орион</title>
     <link rel="stylesheet" href="style.css" />
@@ -88,6 +88,12 @@
         <div id="panel-actions" class="panel-actions"></div>
       </div>
 
+      <div id="alarm" class="confirm alarm" hidden>
+        <span id="alarm-label"></span>
+        <button id="alarm-snooze" class="btn">Ещё 10 минут</button>
+        <button id="alarm-stop" class="btn primary">Выключить</button>
+      </div>
+
       <div id="confirm" class="confirm" hidden>
         <span id="confirm-text"></span>
         <button id="confirm-yes" class="btn primary">Да</button>
@@ -102,6 +108,8 @@
 
     <script src="voice.js"></script>
     <script src="commands.js"></script>
+    <script src="radio.js"></script>
+    <script src="alarm.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

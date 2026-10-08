@@ -7,7 +7,8 @@ const FULL = { width: 400, height: 620 };
 const ORB = { width: 380, height: 96 };
 const ORB_MAX_SHARE = 0.6; // плашка с длинным текстом растёт вверх, но не выше этой доли экрана
 
-function createWindowManager({ title, preload, html, pinned = false }) {
+// orbOffset(workArea) — на сколько поднять плашку: в правом нижнем углу может стоять мини-плеер радио
+function createWindowManager({ title, preload, html, pinned = false, orbOffset = () => 0 }) {
   let win = null;
   let mode = 'hidden';
   let fullBounds = null; // куда пользователь передвинул полное окно
@@ -91,7 +92,8 @@ function createWindowManager({ title, preload, html, pinned = false }) {
   function placeOrb() {
     const a = area();
     const h = Math.min(orbHeight, Math.round(a.height * ORB_MAX_SHARE));
-    win.setBounds({ width: ORB.width, height: h, x: a.x + a.width - ORB.width - 16, y: a.y + a.height - h - 16 });
+    const lift = orbOffset(a);
+    win.setBounds({ width: ORB.width, height: h, x: a.x + a.width - ORB.width - 16, y: a.y + a.height - h - 16 - lift });
   }
 
   // Рендерер сообщает, сколько места нужно тексту в плашке
