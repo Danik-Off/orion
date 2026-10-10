@@ -19,11 +19,26 @@ const { planSchema, dispatchSchema, parsePlan, parseDispatch, chatPlan } = requi
 const { createSayStreamer, createSayCutter } = require('./say-stream');
 const { isRefusal, isUnknown, isCreative } = require('./intent');
 const { SESSION_TURNS } = require('./session');
+const { fromText } = require('../../lib/text-args');
+const { normalizeRequest } = require('../../lib/idioms');
 
 // Ответ, когда большой модели нет: что случилось и как это исправить
 const NO_BRAIN =
   'Для этого мне нужна большая языковая модель, сэр. Её можно скачать или подключить внешнюю — в настройках, раздел «Модели». ' +
   'Простые команды я выполняю и без неё.';
+const NO_BRAIN_SHORT = 'Это я пойму только с большой моделью, сэр.';
+// Что точно получится без модели — вместо глухого «не могу» (главная жалоба на помощников — «не понимает»)
+const CAN_DO = ['какая погода', 'включи радио', 'поставь таймер на 10 минут', 'почём доллар', 'что нового в мире'];
+
+// 2–3 примера команд, которые выполняются без большой модели: сначала — из навыка, о котором, похоже, спросили
+// («переведи на английский» → примеры текста), потом — самые частые. Только то, что разбирается без модели.
+function examplesWithoutBrain(query, skills) {
+  const id = skills.likely(query);
+  const own = (skills.skillInfo(id)?.tools || [])
+    .flatMap((t) => (t.examples || []).map(([phrase]) => phrase))
+    .filter((phrase) => typeof phrase === 'string' && skills.quickPlan(phrase));
+  return [...new Set([...own.slice(0, 2), ...CAN_DO])].slice(0, 3);
+}
 
 function createModelPlanner({ config, llm, skills, prompts, audit, cloud = null }) {
   // Модель отказалась — переспросить с навыком-запасным: просьбу что-то сделать она передаст ему,
@@ -99,15 +114,52 @@ function createModelPlanner({ config, llm, skills, prompts, audit, cloud = null 
   // Маленькая модель узнала инструмент — сразу второй шаг; не вышло — null (дальше полный разбор)
   // Большой модели нет (не скачана, не подключена) — облако, если подключено (с разрешения), иначе честный ответ
   const brainless = () => llm.available?.() === false;
+
+  // Без большой модели: маленькая назвала инструмент — аргумент из фразы по правилам (lib/text-args.js),
+  // а не разобрали — её собственный. Урезанно, но команда выполняется вместо «нет большой модели»
+  function planAlone(focus, query) {
+    // Правила — по фразе как есть, а не разобрали — по приведённой к команде («а можешь включить музыку»)
+    let parsed = fromText(focus.tool, query, { config });
+    if (parsed === null || parsed === undefined) {
+      const asCommand = normalizeRequest(query);
+      if (asCommand !== query) parsed = fromText(focus.tool, asCommand, { config }) ?? parsed;
+    }
+    if (parsed === null) {
+      // Правило узнало, что фраза не про этот инструмент («выруби радио» — не включить радио)
+      audit({ brain: 'нет большой модели', input: query, tool: focus.tool, parsed: false });
+      return null;
+    }
+    const rule = parsed !== undefined && skills.argAllowed(focus.tool, parsed) ? parsed : null;
+    // Аргумент, который обычно пишет сама маленькая модель («Казань» для погоды), — её уверенный лучше правила;
+    // тот, что писала бы большая (время, текст заметки), — сначала правило
+    // (её же аргумент для них не в счёт: учили её их не писать). Пустой её аргумент уступает правилу
+    // («открой папку загрузки» → «загрузки»), но годится, если правила нет («сверни все окна»)
+    const own = focus.arg ?? null;
+    const arg = skills.toolInfo(focus.tool)?.tool.llmArg ? rule : own ? own : (rule ?? own);
+    if (arg === null || arg === undefined) {
+      audit({ brain: 'нет большой модели', input: query, tool: focus.tool, parsed: false });
+      return null;
+    }
+    const say = skills.speaksOf(focus.tool) ? '' : 'Готово, сэр.';
+    return { addressed: true, topic: focus.skill, actions: [{ tool: focus.tool, arg }], say, alone: true };
+  }
+  // Повтор в пределах 10 минут — коротко: длинное объяснение каждый раз раздражает
+  let toldAt = 0;
   async function withoutBrain(query) {
     const answer = cloud?.available() ? await cloud.ask(query) : null;
     if (answer) return chatPlan(answer, { cloud: true });
     audit({ brain: 'нет большой модели', input: query });
-    return chatPlan(NO_BRAIN);
+    const again = Date.now() - toldAt < 10 * 60_000;
+    toldAt = Date.now();
+    if (again) return chatPlan(NO_BRAIN_SHORT);
+    const examples = examplesWithoutBrain(query, skills)
+      .map((e) => `«${e[0].toUpperCase()}${e.slice(1)}»`)
+      .join(', ');
+    return chatPlan(`${NO_BRAIN} Например: ${examples}.`);
   }
 
   async function planFocused({ focus, query, who, mem }) {
-    if (brainless()) return null;
+    if (brainless()) return planAlone(focus, query);
     const filled = await fill({ tool: focus.tool, task: query }, { query, who, mem });
     if (!filled) return null;
     return { addressed: true, topic: focus.skill, actions: [filled.action], say: filled.say, focused: true };
@@ -192,7 +244,7 @@ function createModelPlanner({ config, llm, skills, prompts, audit, cloud = null 
     return (await firstOf(afterSpeech(), first, turn)) || first;
   }
 
-  return { plan: makePlan, planFocused };
+  return { plan: makePlan, planFocused, planAlone };
 }
 
-module.exports = { createModelPlanner, NO_BRAIN };
+module.exports = { createModelPlanner, NO_BRAIN, examplesWithoutBrain };

@@ -276,6 +276,16 @@ function createSpeech({ modelsDir, config = {}, log = console.warn }) {
   const preroll = []; // последние ~0.5 с звука, чтобы не терять начало слова
   const PREROLL_CHUNKS = 8; // 0,8 с: не срезать тихое начало слова («О-рион»)
   const HANGOVER_MS = 1200; // сколько ждать после конца речи, прежде чем закрыть фразу
+  // Голос говорящего и фон. Тот, кто обращается к Ориону, ближе к микрофону: его речь громче фона — телевизора,
+  // радио, разговора в другом конце комнаты. Пока его голос не стих, фраза идёт; стих на HANGOVER_MS — фраза
+  // договорена, даже если фон ещё звучит (раньше фон не давал увидеть паузу, и в команду попадало лишнее:
+  // «поставь будильник на семь утра ну короче…»). Текст и звук фразы — на момент, когда голос стих.
+  const VOICE_DROP_DB = 12; // тише своего голоса на столько — уже фон
+  const TAIL_CHUNKS = 4; // 0,4 с после голоса: распознаватель договаривает последнее слово
+  let voiceDb = null; // громкость голоса этой фразы (огибающая с медленным спадом)
+  let quietMs = 0; // сколько мс не слышно голоса говорящего
+  let spokenText = ''; // текст на момент, когда голос стих (+ TAIL_CHUNKS)
+  let spokenChunks = 0; // сколько кусков звука фразы — до того же момента
 
   // Звук текущей фразы (не дольше 30 с): целиком с паузами — для второго прохода,
   // только речь — для узнавания голоса (тишина портит отпечаток)
@@ -295,8 +305,9 @@ function createSpeech({ modelsDir, config = {}, log = console.warn }) {
     for (const c of chunks) out.set(c, (o += c.length) - c.length);
     return out;
   };
-  const takeUtterance = () => {
-    const result = { all: join(utterance), voice: join(voiceOnly) };
+  // upTo — сколько первых кусков взять (фраза без фона после голоса); голос для узнавания — весь
+  const takeUtterance = (upTo) => {
+    const result = { all: join(upTo ? utterance.slice(0, upTo) : utterance), voice: join(voiceOnly) };
     utterance = [];
     voiceOnly = [];
     utteranceLen = 0;
@@ -364,6 +375,11 @@ function createSpeech({ modelsDir, config = {}, log = console.warn }) {
         keep(samples, speech);
       }
       silentMs = speech ? 0 : silentMs + (samples.length / SAMPLE_RATE) * 1000;
+      // Голос говорящего: речь не тише огибающей его громкости на VOICE_DROP_DB
+      const db = chunkDb(samples);
+      if (speech) voiceDb = voiceDb === null ? db : Math.max(db, voiceDb - 0.3); // спад ~3 дБ/с
+      const loud = speech && voiceDb !== null && db >= voiceDb - VOICE_DROP_DB;
+      quietMs = loud ? 0 : quietMs + (samples.length / SAMPLE_RATE) * 1000;
     } else {
       stream.acceptWaveform({ samples, sampleRate: SAMPLE_RATE });
       keep(samples);
@@ -371,9 +387,18 @@ function createSpeech({ modelsDir, config = {}, log = console.warn }) {
 
     while (recognizer.isReady(stream)) recognizer.decode(stream);
     const text = recognizer.getResult(stream).text.trim().toLowerCase();
+    // Пока голос звучит (и чуть после) — запомнить, докуда фраза его
+    if (vad && quietMs <= TAIL_CHUNKS * 100) {
+      spokenText = text;
+      spokenChunks = utterance.length;
+    }
     // Конец фразы: пауза по распознавателю; по детектору речи — только вне режима «жду вас»
     // (иначе тихая фраза обрывалась бы посередине)
     const vadSilence = vad && !listening && silentMs >= HANGOVER_MS;
+    // Голос говорящего стих, а фон ещё звучит — фраза договорена (и в режиме «жду вас»: там слова уже есть).
+    // Фон — детектор речи слышал что-то уже после голоса (silentMs обнуляется на любой речи)
+    const background = vad && quietMs - silentMs > 300;
+    const voiceGone = background && !!spokenText && quietMs >= HANGOVER_MS;
     // Законченная короткая команда («пауза», «громче», «который час», «да» в подтверждении) — не ждём полную
     // паузу 1,2 с: детектор речи уже слышит тишину (сам он отпускает речь через 0,4 с) плюс QUICK_END_MS
     let quick = false;
@@ -383,16 +408,23 @@ function createSpeech({ modelsDir, config = {}, log = console.warn }) {
         quick = !!quickEnd(text);
       } catch {}
     }
-    if (recognizer.isEndpoint(stream) || vadSilence || quick) {
+    if (recognizer.isEndpoint(stream) || vadSilence || voiceGone || quick) {
       recognizer.reset(stream);
       lastPartial = '';
       quickChecked = '';
       if (vadSilence) active = false;
-      const { all, voice } = takeUtterance();
-      if (!text) return null;
+      // Закончил голос, а дальше был фон — фраза только до голоса, без фона
+      const cut = voiceGone;
+      const said = cut ? spokenText : text;
+      const { all, voice } = takeUtterance(cut ? spokenChunks : undefined);
+      voiceDb = null;
+      quietMs = 0;
+      spokenText = '';
+      spokenChunks = 0;
+      if (!said) return null;
       // Точный текст — от второго прохода; быстрый остаётся запасным (и для поиска имени)
       const accurate = recognizeAgain(all);
-      return { final: accurate || text, firstPass: text, audio: voice };
+      return { final: accurate || said, firstPass: said, audio: voice };
     }
     if (text === lastPartial) return null;
     lastPartial = text;
@@ -407,6 +439,10 @@ function createSpeech({ modelsDir, config = {}, log = console.warn }) {
     quickChecked = '';
     active = !vad || listening;
     silentMs = 0;
+    voiceDb = null;
+    quietMs = 0;
+    spokenText = '';
+    spokenChunks = 0;
     preroll.length = 0;
     takeUtterance();
     vad?.reset();

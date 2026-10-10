@@ -138,7 +138,7 @@ test('план: подсказка при расхождении с роутер
 
   // в историю — JSON плана с цифрами (не озвученный текст) и действиями
   t = mk(['{"topic":"calc","actions":[{"tool":"calc","arg":"20+1"}],"say":""}', '{"topic":"chat","actions":[],"say":"ок"}']);
-  r = await t.assistant.handle('сколько будет 20 плюс 1', { source: 'text' });
+  r = await t.assistant.handle('посчитай пример двадцать и один', { source: 'text' }); // «20 плюс 1» считает быстрый разбор
   assert.match(r.say, /21/, 'в окне — цифрами');
   assert.match(require('../src/lib/speech-text').normalizeForSpeech(r.say), /двадцать один/, 'озвучка — словами');
   await t.assistant.handle('спасибо', { source: 'text' });

@@ -12,7 +12,7 @@ function explainError(err, config) {
   }
   if (/not found/i.test(msg)) return `Модель ${config.model} не найдена. Выполните: ollama pull ${config.model}`;
   if (/timeout|aborted/i.test(msg)) return 'Модель слишком долго отвечает.';
-  return `Сбой: ${msg}`;
+  return 'Что-то пошло не так, сэр. Попробуйте ещё раз; подробности — в журнале.'; // текст ошибки — в журнал, не вслух
 }
 
 // Подпись реплики в чате — только по настоящей проверке голоса: имя, «Гость» (голос чужой);

@@ -1,5 +1,9 @@
 // Голос: микрофон → распознавание в main, и озвучка ответов (свой голос Supertonic или, пока его нет, системный).
-/* exported createMic, createSpeaker, playChime */
+/* exported createMic, createSpeaker, playChime, setQuiet */
+
+// Ночной режим: доля громкости голоса и сигнала «слушаю» (app.js задаёт по часам; будильник не трогает)
+let quiet = () => 1;
+const setQuiet = (fn) => (quiet = typeof fn === 'function' ? fn : () => 1);
 
 // Микрофон. Звук дальше этого окна и main-процесса никуда не уходит.
 function createMic({ onChange, onLevel, echoCancellation = () => true }) {
@@ -127,6 +131,7 @@ function createSpeaker({ ownVoice, onStart, onEnd }) {
         if (!ownVoice) {
           const u = new SpeechSynthesisUtterance(sentence);
           u.lang = 'ru-RU';
+          u.volume = quiet();
           const ru = speechSynthesis.getVoices().filter((v) => v.lang.startsWith('ru'));
           u.voice = ru.find((v) => /pavel|dmitry/i.test(v.name)) || ru[0] || null;
           playing++;
@@ -145,7 +150,9 @@ function createSpeaker({ ownVoice, onStart, onEnd }) {
         buf.copyToChannel(audio.samples, 0);
         const src = ctx.createBufferSource();
         src.buffer = buf;
-        src.connect(ctx.destination);
+        const gain = ctx.createGain();
+        gain.gain.value = quiet();
+        src.connect(gain).connect(ctx.destination);
         began();
         endAt = Math.max(endAt, ctx.currentTime + 0.02);
         src.start(endAt);
@@ -178,12 +185,13 @@ function createSpeaker({ ownVoice, onStart, onEnd }) {
   return { speak, stream, stop };
 }
 
-// Короткий сигнал: «слушаю» (два тона вверх) или «напоминание» (четыре тона).
+// Короткий сигнал: «слушаю», «разговор окончен» или «напоминание».
 let chimeCtx = null;
 // volume — 0..1 (будильник нарастает)
 function playChime(kind = 'listen', volume = 1) {
   chimeCtx ??= new AudioContext();
-  const notes = kind === 'alarm' ? [880, 660, 880, 660] : [660, 990];
+  // «слушаю» — два тона вверх; «разговор окончен» — те же вниз и тише; напоминание — четыре тона
+  const notes = kind === 'alarm' ? [880, 660, 880, 660] : kind === 'end' ? [990, 660] : [660, 990];
   const t0 = chimeCtx.currentTime + 0.01;
   notes.forEach((freq, i) => {
     const osc = chimeCtx.createOscillator();
@@ -192,7 +200,8 @@ function playChime(kind = 'listen', volume = 1) {
     osc.type = 'sine';
     osc.frequency.value = freq;
     gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(0.15 * Math.max(0.05, Math.min(1, volume)), t + 0.01);
+    const level = Math.max(0.05, Math.min(1, volume)) * (kind === 'alarm' ? 1 : quiet()) * (kind === 'end' ? 0.5 : 1);
+    gain.gain.linearRampToValueAtTime(0.15 * level, t + 0.01);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
     osc.connect(gain).connect(chimeCtx.destination);
     osc.start(t);

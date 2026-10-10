@@ -39,6 +39,8 @@ function parsePlan(raw, toolNames, allowed = () => true) {
   } catch {
     return chatPlan(String(raw).slice(0, 800));
   }
+  // JSON, но не объект («null», «[]», число) — модель ответила не по схеме: пустой ответ, а не падение
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return chatPlan('');
   const actions = (Array.isArray(p.actions) ? p.actions : [])
     .filter((a) => a && toolNames.includes(a.tool))
     .map((a) => ({ tool: a.tool, arg: typeof a.arg === 'string' ? a.arg.trim().slice(0, 300) : '' }))
@@ -60,6 +62,8 @@ function parseDispatch(raw, toolNames) {
   } catch {
     return chatPlan(String(raw).slice(0, 800));
   }
+  // JSON, но не объект («null», «[]», число) — модель ответила не по схеме: пустой ответ, а не падение
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return chatPlan('');
   const actions = (Array.isArray(p.actions) ? p.actions : [])
     .filter((a) => a && toolNames.includes(a.tool))
     .map((a) => ({ tool: a.tool, task: typeof a.task === 'string' ? a.task.trim().slice(0, 300) : '' }))

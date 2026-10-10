@@ -5,7 +5,9 @@
 //   whoAmI   — «как меня зовут», «кто я» — прямо из узнанного голоса;
 //   router   — маленькая модель вызова функций (core/router.js), если подключена: готовый вызов
 //              или только имя инструмента (turn.focus);
-//   focused  — инструмент назван — аргумент пишет большая модель по узкому промпту этого инструмента;
+//   focused  — инструмент назван — аргумент пишет большая модель по узкому промпту этого инструмента
+//              (без неё — правила lib/text-args.js);
+//   alone    — большой модели нет: дела по частям, навык по словам, поиск, простой разговор (alone.js);
 //   model    — большая модель (model-planner.js): диспетчер + узкий диалог на каждый шаг, переспросы и облако;
 //              отвечает всегда.
 // Своя ступень — объект { name, plan(turn) → план | null } в списке stages (опция createAssistant).
@@ -20,13 +22,17 @@ const { createModelPlanner } = require('./model-planner');
 const { createSayStreamer } = require('./say-stream');
 const { guardCloseIntent, isRefusal, isUnknown } = require('./intent');
 const addressing = require('./addressing');
+const { createAlone } = require('./alone');
+const { MULTI } = require('../router');
 
 const { applyHonorific, needsAddressCheck, whoAmIPlan, isResetDialog } = addressing;
 
 // Стандартные ступени. turn: { text, content, source, followup, who, mem, history, recent, onSay }
-function defaultStages({ skills, router, modelPlanner }) {
+function defaultStages({ skills, router, modelPlanner, alone, brainless, audit }) {
   return [
-    { name: 'quick', plan: ({ text }) => skills.quickPlan(text) },
+    // Несколько дел в одной фразе — не быстрому разбору: «открой телеграм, потом включи музыку» он принял бы
+    // за одну программу «телеграм, потом включи музыку»
+    { name: 'quick', plan: ({ text }) => (MULTI.test(text) ? null : skills.quickPlan(text)) },
     { name: 'whoAmI', plan: ({ text, who, mem, source }) => whoAmIPlan(text, who, mem, source) },
     router && {
       name: 'router',
@@ -39,10 +45,24 @@ function defaultStages({ skills, router, modelPlanner }) {
     },
     // Инструмент назван маленькой моделью — аргумент пишет большая по узкому промпту этого инструмента
     { name: 'focused', plan: (turn) => (turn.focus ? modelPlanner.planFocused(turn) : null) },
+    // Большой модели нет — то, что можно правилами: дела по частям, навык по словам, поиск, простой разговор
+    { name: 'alone', plan: (turn) => (brainless() ? alone.plan(turn) : null) },
     {
       name: 'model',
       plan: async (turn) => {
-        const plan = await modelPlanner.plan(turn.content, turn);
+        let plan;
+        try {
+          plan = await modelPlanner.plan(turn.content, turn);
+        } catch (err) {
+          // Перебили или фразу дополнили — отмена идёт дальше, как раньше
+          if (turn.signal?.aborted) throw err;
+          // Большая модель упала (сервер умер, ошибка движка) — сделать, что можно без неё, а не сдаться
+          audit({ brain: 'ошибка большой модели', error: String(err?.message || err).slice(0, 200), input: turn.text });
+          return (
+            (await alone.plan(turn)) ||
+            chatPlan('Большая модель сейчас не отвечает, сэр. Простые команды я выполню и без неё — попробуйте ещё раз.')
+          );
+        }
         // Пример для дообучения маленькой модели (продолжения и шаги сценариев ей не достаются, облачные ответы — не её)
         if (!turn.source.startsWith('followup') && turn.source !== 'perform' && !plan.cloud) router?.record(turn.text, plan);
         return plan;
@@ -77,7 +97,9 @@ function createAssistant({
   const prompts = createPrompts({ name: config.name, skills, memory });
   const session = createSession({ config, llm, memory, audit, onEnd: onSessionEnd });
   const modelPlanner = createModelPlanner({ config, llm, skills, prompts, audit, cloud });
-  const standard = defaultStages({ skills, router, modelPlanner });
+  const alone = createAlone({ config, skills, router, planAlone: modelPlanner.planAlone });
+  const brainless = () => llm.available?.() === false;
+  const standard = defaultStages({ skills, router, modelPlanner, alone, brainless, audit });
   const chain = typeof stages === 'function' ? stages(standard) : standard;
   // Сценарии выполняют фразы как команды: без вопросов о собеседнике и без маленькой модели (ей не видна цель сценария)
   const commandChain = standard.filter((s) => s.name === 'quick' || s.name === 'model');
@@ -86,15 +108,17 @@ function createAssistant({
     const spoken = [];
     const problems = [];
     let sources;
+    const cards = []; // карточки для окна: погода, таймер, напоминание (навык отдаёт данные, окно рисует)
     let noFollowUp = false; // после включения видео не слушаем продолжение — услышим сам ролик
     for (const { tool, arg } of actions) {
       const result = await skills.run(tool, arg, request);
       if (result.speak) spoken.push(result.speak);
       else if (result.message) problems.push(result.message);
       if (result.sources?.length) sources = result.sources;
+      if (result.card && typeof result.card === 'object') cards.push(result.card);
       if (result.silentAfter) noFollowUp = true;
     }
-    return { spoken, problems, sources, noFollowUp };
+    return { spoken, problems, sources, cards, noFollowUp };
   }
 
   // source: 'wake' — с ключевым словом, 'hotkey' — после клавиши или клика, 'followup' — продолжение без имени,
@@ -131,6 +155,7 @@ function createAssistant({
       history: session.history(),
       recent: session.recent(),
       onSay: sayPart,
+      signal,
     };
     const plan = guardCloseIntent(await runStages(chain, turn), text);
     audit({ input: text, source, person: personId, plan });
@@ -157,7 +182,7 @@ function createAssistant({
     const skillStream = plan.actions.length === 1 && sayPart ? createSayStreamer(sayPart, { plain: true }) : null;
     // signal — навыки с долгой работой (серверы MCP) прерываются по «Орион, стоп»
     const request = { text, person: who || null, memory: mem, onText: skillStream?.onText, signal };
-    const { spoken, problems, sources, noFollowUp } = await runActions(plan.actions, request);
+    const { spoken, problems, sources, cards, noFollowUp } = await runActions(plan.actions, request);
     // Ответ навыка уже звучит по предложениям — договорить остаток; ошибка — окно скажет всё заново
     const skillStreamed = !!skillStream?.started() && spoken.length === 1 && !problems.length && !signal?.aborted;
     if (skillStreamed) skillStream.finish(spoken[0]);
@@ -172,6 +197,7 @@ function createAssistant({
       say,
       actions: plan.actions,
       sources,
+      cards: cards.length ? cards : undefined,
       noFollowUp,
       silent: !!plan.silent && !problems.length,
       streamed: (!!plan.streamed && !plan.actions.length) || skillStreamed,

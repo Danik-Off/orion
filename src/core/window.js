@@ -1,10 +1,10 @@
-// Окно ассистента в трёх режимах: полное, компактная плашка в углу (не забирает фокус) и скрытое.
+// Окно ассистента в трёх режимах: полное, капсула в углу (не забирает фокус и клики мимо себя) и скрытое.
 // Полное — обычное окно: в панели задач, сворачивается, поверх остальных — только если его закрепили (pinned).
 // Плашка всегда поверх: она маленькая и появляется на время ответа.
 const { BrowserWindow, screen } = require('electron');
 
 const FULL = { width: 400, height: 620 };
-const ORB = { width: 380, height: 96 };
+const ORB = { width: 400, height: 80 }; // капсула (до 376 px) + поля под тень и кнопки; высоту задаёт окно по капсуле
 const ORB_MAX_SHARE = 0.6; // плашка с длинным текстом растёт вверх, но не выше этой доли экрана
 
 // orbOffset(workArea) — на сколько поднять плашку: в правом нижнем углу может стоять мини-плеер радио
@@ -50,6 +50,17 @@ function createWindowManager({ title, preload, html, pinned = false, orbOffset =
   function applyLayer(next) {
     win.setAlwaysOnTop(next === 'orb' || pinned, 'floating');
     win.setSkipTaskbar(next !== 'full');
+    if (next !== 'orb') setPassthrough(false); // сквозные клики — только у капсулы
+  }
+
+  // Капсула: прозрачная часть окна пропускает клики в программу под ним (окно при этом видит движение мыши —
+  // так рендерер узнаёт, что мышь снова над капсулой, и выключает пропуск)
+  let through = false;
+  function setPassthrough(on) {
+    const next = on === true && mode === 'orb';
+    if (!win || next === through) return;
+    through = next;
+    win.setIgnoreMouseEvents(next, { forward: true });
   }
 
   const area = () => screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
@@ -93,7 +104,8 @@ function createWindowManager({ title, preload, html, pinned = false, orbOffset =
     const a = area();
     const h = Math.min(orbHeight, Math.round(a.height * ORB_MAX_SHARE));
     const lift = orbOffset(a);
-    win.setBounds({ width: ORB.width, height: h, x: a.x + a.width - ORB.width - 16, y: a.y + a.height - h - 16 - lift });
+    // Капсула сама отступает от краёв окна на 12 px — окно почти вплотную к углу рабочей области
+    win.setBounds({ width: ORB.width, height: h, x: a.x + a.width - ORB.width - 4, y: a.y + a.height - h - 4 - lift });
   }
 
   // Рендерер сообщает, сколько места нужно тексту в плашке
@@ -122,6 +134,7 @@ function createWindowManager({ title, preload, html, pinned = false, orbOffset =
     create,
     setMode,
     setOrbHeight,
+    setPassthrough,
     send,
     mode: () => mode,
     pinned: () => pinned,

@@ -1,7 +1,8 @@
 // Программы: открыть (любая из меню «Пуск»), закрыть (как крестиком), свернуть все окна.
 const path = require('node:path');
 const { createAppCatalog, score } = require('../lib/app-catalog');
-const { launch, listWindowedApps, closeProcessWindows, minimizeAll, defaultBrowserProcess } = require('../lib/windows');
+const windows = require('../lib/windows'); // closeForegroundWindow — через объект: тесты подменяют системные вызовы
+const { launch, listWindowedApps, closeProcessWindows, minimizeAll, defaultBrowserProcess } = windows;
 
 let catalog = null;
 
@@ -32,9 +33,9 @@ async function findApp(name) {
   if (BUILTIN[q]) return { name: q, target: BUILTIN[q] };
   if (/^(браузер|browser|интернет)$/.test(q)) {
     const proc = await defaultBrowserProcess();
-    return (proc && (await catalog.find(BROWSER_APPS[proc] || proc))) || null;
+    return (proc && (await catalog?.find(BROWSER_APPS[proc] || proc))) || null;
   }
-  return catalog.find(name);
+  return (await catalog?.find(name)) || null; // список программ не собрался (ошибка при запуске) — «не нашёл»
 }
 
 async function openTarget(target, ctx) {
@@ -48,6 +49,16 @@ async function openTarget(target, ctx) {
 }
 
 async function closeApp(query, ctx) {
+  // «Закрой это окно», «закрой его», «закрой окно» — то, что сейчас впереди
+  if (
+    /^(?:это|этот|эту|его|ее|текущее|активное|открытое|верхнее)?\s*(?:окно|программу|приложение|вкладку)?$/i.test(String(query).trim()) &&
+    String(query).trim()
+  ) {
+    const closed = await windows.closeForegroundWindow();
+    if (!closed) return { ok: false, message: 'Не вижу, какое окно закрыть, сэр. Нажмите на него и повторите.' };
+    ctx.audit({ closed, window: 'активное' });
+    return { ok: true };
+  }
   let processName = null;
   let label = query;
   if (/^(браузер|browser)/i.test(query)) {
@@ -105,7 +116,13 @@ module.exports = {
         ['открой телеграм', { addressed: true, say: 'Открываю Telegram, сэр.', actions: [{ tool: 'open_app', arg: 'телеграм' }] }],
       ],
       run: async (name, ctx) => {
-        const found = name && (await findApp(name));
+        let found = name && (await findApp(name));
+        // Распознавание исказило название («ворт», «зум») — переспросить похожее, а не сразу «не нашёл»
+        if (!found && name) {
+          const guess = await catalog?.suggest?.(name);
+          if (guess && (await ctx.confirm?.(`Вы имели в виду «${guess.name}»?`)) === true) found = guess;
+          else if (guess) return { ok: false, message: 'Хорошо, не открываю, сэр.' };
+        }
         if (!found) return { ok: false, message: `Не нашёл программу «${name}» в меню «Пуск», сэр.` };
         await openTarget(found.target, ctx);
         return { ok: true };

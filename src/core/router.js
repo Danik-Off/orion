@@ -17,6 +17,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { MODELS } = require('./llama');
 const { installedRouterVersion } = require('./component-releases');
+const { normalizeRequest } = require('../lib/idioms');
 
 // Строка, которой FunctionGemma учили объявлять функции (без неё исходная хуже вызывает инструменты).
 // Дообученной она не нужна: запрос — одна фраза, без системного промпта (router.system: false; так короче и быстрее)
@@ -24,7 +25,8 @@ const SYSTEM = 'You are a model that can do function calling with the following 
 
 // Фраза опирается на прошлую реплику — без истории её не понять
 const REFERS = /(?<!\p{L})(его|её|ее|их|это|этот|эту|там|туда|тоже|ещё|еще|снова|опять|обратно|такой же|а завтра|а сейчас)(?!\p{L})/iu;
-const CONTINUATION = /^(а|и|но|ну|да|нет|ладно)\s/i;
+// «а можешь включить музыку», «ну включи радио» — обычные просьбы; ссылки на прошлое («а завтра», «это», «тоже») ловит REFERS
+const CONTINUATION = /^(и|но|да|нет|ладно)\s/i;
 // Несколько задач: «открой телеграм и включи музыку», «…, потом …»
 const MULTI =
   /(?<!\p{L})(и|а потом|потом|затем|после этого|а ещё|а еще)\s+(?:\p{L}+\s+)?(включи|выключи|открой|закрой|запусти|поставь|найди|покажи|напомни|сделай|скажи|какая|какой|какие|сколько|что|как|где|когда)(?!\p{L})/iu;
@@ -60,8 +62,10 @@ function confidence(tokens) {
   return { name: Math.exp(name), arg: Math.exp(arg) };
 }
 
-// server — свой llama-server с моделью router.model (core/llama.js); dataDir — куда писать набор
-function createRouter({ config, server, skills, audit = () => {}, dataDir }) {
+// server — свой llama-server с моделью router.model (core/llama.js); dataDir — куда писать набор;
+// alone() — большой модели нет: передавать некому, поэтому догадка маленькой берётся и при меньшей уверенности
+// (router.minConfidenceAlone), а аргумент, который писала бы большая, разбирают правила (lib/text-args.js)
+function createRouter({ config, server, skills, audit = () => {}, dataDir, alone = () => false }) {
   // Настройки читаются при каждом запросе: включить, выключить или сменить порог можно без перезапуска
   const DEFAULTS = { enabled: true, exclude: [], maxSkills: 3, collect: true, minConfidence: 0.95 };
   const cfg = () => ({ ...DEFAULTS, ...config.router });
@@ -109,13 +113,21 @@ function createRouter({ config, server, skills, audit = () => {}, dataDir }) {
   // → { plan } — готовый план; { focus: { skill, tool } } — навык понят, аргумент — большой модели по узкому
   //   промпту; null — передать большой модели целиком
   async function route(text, { followup = false } = {}) {
-    if (!cfg().enabled || !server.available() || followup || !routable(text)) return null;
+    // «какая там погода», «ну это самое включи радио» — заполнители не делают фразу ссылкой на прошлое
+    if (!cfg().enabled || !server.available() || followup || !(routable(text) || routable(normalizeRequest(text)))) return null;
     // Задача для подключённого сервера MCP — сразу большой модели: она видит его в каталоге и пишет параметры
     const ext = skills.external?.(text);
     if (ext) {
       skills.skillInfo(ext)?.prewarm?.(); // пока большая модель думает, сервер успеет подняться
       audit({ router: 'передал', input: text, mcp: ext });
       return null;
+    }
+    // Фраза по первым словам принадлежит инструменту (owns) — маленькую модель не спрашиваем: она путала
+    // «напечатай привет, буду через 10 минут» с таймером
+    const owned = skills.owner?.(text);
+    if (owned) {
+      audit({ router: 'навык', input: text, tool: owned.tool, owns: true });
+      return { focus: owned };
     }
     let tools;
     if (toolsInPrompt()) {
@@ -135,13 +147,28 @@ function createRouter({ config, server, skills, audit = () => {}, dataDir }) {
     const c = parseCall(reply.text);
     const p = { name: Math.round(reply.sure.name * 100) / 100, arg: Math.round(reply.sure.arg * 100) / 100 };
     const known = c && skills.toolInfo(c.name) && (!tools || tools.some((t) => t.function.name === c.name));
-    if (!known || reply.sure.name < cfg().minConfidence) {
+    const threshold = alone() ? (cfg().minConfidenceAlone ?? 0.6) : cfg().minConfidence;
+    if (!known || reply.sure.name < threshold) {
       audit({ router: 'передал', input: text, raw: String(reply.text).slice(0, 160), p, ms });
       return null;
     }
     const skill = skills.skillOf(c.name);
-    if (needsModel(c.name) || reply.sure.arg < cfg().minConfidence || !skills.argAllowed(c.name, c.arg)) {
+    if (alone()) {
+      // Без большой модели проверить её некому: инструмент — только если во фразе есть слова его навыка
+      // («сколько стоит iPhone» ≠ закрыть программу), аргумент — по правилам, а её собственный — лишь уверенный
+      const info = skills.skillInfo(skill);
+      const named = info?.always || !info?.keywords?.length || skills.scores(text).some((x) => x.id === skill);
+      if (!named) {
+        audit({ router: 'передал', input: text, tool: c.name, p, ms, alone: 'нет слов навыка' });
+        return null;
+      }
+      const own = skills.argAllowed(c.name, c.arg) && reply.sure.arg >= (cfg().minArgAlone ?? 0.95) ? c.arg : null;
+      audit({ router: 'навык', input: text, tool: c.name, arg: c.arg, p, ms, alone: true });
+      return { focus: { skill, tool: c.name, arg: own } };
+    }
+    if (needsModel(c.name) || reply.sure.arg < threshold || !skills.argAllowed(c.name, c.arg)) {
       audit({ router: 'навык', input: text, tool: c.name, arg: c.arg, p, ms });
+      // Её аргумент — запасной: пригодится, если большой модели нет и правила фразу не разобрали
       return { focus: { skill, tool: c.name } };
     }
     audit({ router: 'выполнил', input: text, tool: c.name, arg: c.arg, p, ms });
@@ -169,4 +196,4 @@ function createRouter({ config, server, skills, audit = () => {}, dataDir }) {
   return { route, record, warmup, needsModel, enabled: () => cfg().enabled && server.available() };
 }
 
-module.exports = { createRouter, parseCall, routable, confidence, SYSTEM };
+module.exports = { createRouter, parseCall, routable, confidence, SYSTEM, MULTI };

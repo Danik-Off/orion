@@ -13,6 +13,7 @@ const { createRouter } = require('../core/router');
 const { createCloud } = require('../core/cloud');
 const { createWakeMatcher } = require('../core/wake');
 const allSkills = require('../skills');
+const reminders = require('../skills/reminders');
 
 const CONFIRM_TIMEOUT_MS = 30_000;
 
@@ -51,7 +52,8 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
     return new Promise((resolve) => {
       const id = crypto.randomUUID();
       pendingConfirms.set(id, resolve);
-      ui.setMode('full');
+      // «Да / Нет» есть и в капсуле: полное окно ради вопроса не разворачиваем, если его не было на экране
+      ui.setMode(ui.mode() === 'full' ? 'full' : 'orb');
       ui.send('jarvis:confirm', { id, text });
       setTimeout(() => pendingConfirms.delete(id) && resolve(null), CONFIRM_TIMEOUT_MS);
     });
@@ -177,10 +179,12 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
     clipboard: { readText: () => clipboard.readText(), writeText: (t) => clipboard.writeText(t) },
     dataDir,
     saveSettings: (patch) => saveSettings(patch), // настройки создаются позже; навыки зовут это уже после запуска
+    // Изменились таймеры, напоминания или будильники — окно обновляет полоску «Запланировано»
+    onSchedule: () => ui.send('jarvis:schedule', reminders.schedule()),
     perform: async () => '', // подменяется ниже, когда ассистент создан (сценарии выполняют фразы как команды)
   };
   const skills = createSkillRegistry(allSkills, { config, ctx, audit });
-  const router = createRouter({ config, server: routerServer, skills, audit, dataDir });
+  const router = createRouter({ config, server: routerServer, skills, audit, dataDir, alone: () => llm.available() === false });
   const cloud = createCloud({ config, confirm, audit });
   const assistant = createAssistant({
     config,
@@ -212,6 +216,8 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
     answerQuestion,
     radio,
     alarmSnooze,
+    schedule: () => reminders.schedule(),
+    scheduleCancel: (id) => reminders.cancel(id),
     allSkills, // все навыки — для списка в настройках
     ctx,
     skills,

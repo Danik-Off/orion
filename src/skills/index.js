@@ -12,6 +12,7 @@ module.exports = [
   require('./apps'),
   require('./music'),
   require('./radio'),
+  require('./sounds'),
   require('./sound'),
   require('./reminders'),
   require('./notes'),

@@ -64,7 +64,7 @@ function createSession({ config, llm, memory, audit, onEnd = () => {} }) {
     const { personId, turns } = state;
     state = { personId: undefined, turns: [], recent: [], timer: null };
     onEnd(reason);
-    if (turns.length < 2) return;
+    if (turns.length < 2 || llm.available?.() === false) return; // подвести итог некому — без ошибки в журнале
     const mem = memory.forPerson(personId);
     try {
       const saved = save(await extractFacts(turns, mem), mem);

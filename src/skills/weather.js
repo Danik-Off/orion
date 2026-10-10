@@ -159,15 +159,27 @@ const signed = (t) => {
   return `${n > 0 ? 'плюс ' : n < 0 ? 'минус ' : ''}${Math.abs(n)}`;
 };
 
-async function forecast(arg, defaultCity) {
+// Значок для карточки в окне по коду погоды WMO
+function iconOf(code) {
+  if (code <= 1) return 'clear';
+  if (code === 2) return 'partly';
+  if (code === 3) return 'cloud';
+  if (code === 45 || code === 48) return 'fog';
+  if (code >= 95) return 'storm';
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 'snow';
+  return 'rain';
+}
+
+// Ответ голосом и карточка для окна: { speak, card }. Карточка — только данные (окно рисует её само)
+async function report(arg, defaultCity) {
   const [cityRaw, whenRaw = ''] = arg.split('|').map((s) => s.trim());
   const city = cityRaw.replace(/^(в|во)\s+/i, '') || defaultCity;
   const days = parseWhen(whenRaw);
-  if (!days) return `Не понял, на какой день нужен прогноз, сэр.`;
-  if (days.some((x) => x >= FORECAST_DAYS)) return `Прогноз есть только на ${FORECAST_DAYS} дней вперёд, сэр.`;
+  if (!days) return { speak: `Не понял, на какой день нужен прогноз, сэр.` };
+  if (days.some((x) => x >= FORECAST_DAYS)) return { speak: `Прогноз есть только на ${FORECAST_DAYS} дней вперёд, сэр.` };
 
   const place = await geocode(city);
-  if (!place) return `Не нашёл город «${city}», сэр.`;
+  if (!place) return { speak: `Не нашёл город «${city}», сэр.` };
 
   const f = await forecastFor(place);
   const where = `в городе ${place.name}`;
@@ -175,24 +187,59 @@ async function forecast(arg, defaultCity) {
   const d = f.daily;
   const oneDay = (i) =>
     `${WMO[d.weather_code[i]] || 'без осадков'}, от ${signed(d.temperature_2m_min[i])} до ${degrees(d.temperature_2m_max[i])}`;
+  const dayCard = (i) => ({
+    label: i === 0 ? 'Сегодня' : i === 1 ? 'Завтра' : shortDay(i),
+    min: Math.round(d.temperature_2m_min[i]),
+    max: Math.round(d.temperature_2m_max[i]),
+    icon: iconOf(d.weather_code[i]),
+    desc: WMO[d.weather_code[i]] || '',
+    rain: d.precipitation_probability_max[i] ?? null,
+  });
+  const card = { type: 'weather', city: place.name };
 
   // Несколько дней (неделя, выходные) — коротко по каждому
   if (days.length > 1) {
     const lines = days.map((i) => `${dayLabel(i)} ${oneDay(i)}`);
-    return `Прогноз ${where}. ${lines.join('. ')}.`;
+    return { speak: `Прогноз ${where}. ${lines.join('. ')}.`, card: { ...card, days: days.map(dayCard) } };
   }
   const [i] = days;
-  if (i > 0) return `${dayLabel(i)} ${where} ${oneDay(i)}.${rain(d.precipitation_probability_max[i])}`;
+  if (i > 0) {
+    return {
+      speak: `${dayLabel(i)} ${where} ${oneDay(i)}.${rain(d.precipitation_probability_max[i])}`,
+      card: { ...card, days: [dayCard(i)] },
+    };
+  }
 
   const c = f.current;
   const feels = Math.abs(c.apparent_temperature - c.temperature_2m) >= 3 ? `, ощущается как ${degrees(c.apparent_temperature)}` : '';
   const wind = Math.round(c.wind_speed_10m);
-  return (
-    `Сейчас ${where} ${degrees(c.temperature_2m)}, ${WMO[c.weather_code] || 'без осадков'}${feels}. ` +
-    `Днём до ${degrees(d.temperature_2m_max[0])}, ветер ${wind} ${plural(wind, 'метр', 'метра', 'метров')} в секунду.` +
-    rain(d.precipitation_probability_max[0])
-  );
+  return {
+    speak:
+      `Сейчас ${where} ${degrees(c.temperature_2m)}, ${WMO[c.weather_code] || 'без осадков'}${feels}. ` +
+      `Днём до ${degrees(d.temperature_2m_max[0])}, ветер ${wind} ${plural(wind, 'метр', 'метра', 'метров')} в секунду.` +
+      rain(d.precipitation_probability_max[0]),
+    card: {
+      ...card,
+      now: {
+        temp: Math.round(c.temperature_2m),
+        feels: feels ? Math.round(c.apparent_temperature) : null,
+        desc: WMO[c.weather_code] || '',
+        icon: iconOf(c.weather_code),
+        wind,
+      },
+      days: [0, 1, 2, 3].filter((x) => x < (d.temperature_2m_max?.length || 0)).map(dayCard),
+    },
+  };
 }
+
+// «Пт 3» — подпись дня в строке прогноза
+const SHORT_WEEKDAYS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+function shortDay(offset, today = new Date()) {
+  const dt = new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset);
+  return `${SHORT_WEEKDAYS[dt.getDay()]} ${dt.getDate()}`;
+}
+
+const forecast = async (arg, defaultCity) => (await report(arg, defaultCity)).speak;
 
 // Город: собеседника (профиль, затем факты «Живёт в Казани») → дома из общей памяти → из настроек
 function homeCity(ctx) {
@@ -254,7 +301,7 @@ module.exports = {
       ],
       // «Москва|сегодня» — «сегодня» лишнее: без дня прогноз и так на сейчас
       normalize: (arg) => arg.replace(/\|\s*(сегодня|сейчас|today|now)\s*$/i, ''),
-      run: async (arg, ctx) => ({ ok: true, speak: await forecast(arg || '', homeCity(ctx)) }),
+      run: async (arg, ctx) => ({ ok: true, ...(await report(arg || '', homeCity(ctx))) }),
     },
   ],
   // Фоновое обновление — только в приложении (в тестах нет dataDir) и только для городов, о которых спрашивали
@@ -270,6 +317,8 @@ module.exports = {
       .catch(() => {});
   },
   forecast,
+  report,
+  iconOf,
   geocode,
 };
 let refresher = null;

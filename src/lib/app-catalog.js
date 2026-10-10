@@ -95,6 +95,23 @@ function score(query, name) {
   return dist <= tolerance ? 60 - dist * 5 : 0;
 }
 
+// Похожее название, когда точного нет: «ворт» → Word, «зум» → Zoom. Для переспроса «Вы имели в виду …?», а не
+// для запуска: допуск здесь шире, чем в score (до половины букв слова). → имя или null
+function nearest(query, names) {
+  const q = normalize(query).replace(/ /g, '');
+  if (q.length < 3) return null;
+  let best = null;
+  for (const name of names) {
+    const n = normalize(name);
+    for (const w of [n.replace(/ /g, ''), ...n.split(' ')]) {
+      if (w.length < 3) continue;
+      const ratio = levenshtein(q, w) / Math.max(q.length, w.length);
+      if (ratio <= 0.5 && (!best || ratio < best.ratio || (ratio === best.ratio && name.length < best.name.length))) best = { name, ratio };
+    }
+  }
+  return best?.name || null;
+}
+
 // Справка, деинсталляторы, ссылки на сайты и служебные пункты в каталог не попадают.
 const JUNK_NAME =
   /uninstall|удал|readme|help|справк|documentation|документац|license|лиценз|website|web site|release notes|virtual network adapter|manual|руководств/i;
@@ -133,7 +150,21 @@ function createAppCatalog({ aliases = {}, discover = true }) {
     return best;
   }
 
-  return { find, ready, count: () => startApps.length };
+  // Похожая программа для переспроса → { name, target } или null
+  async function suggest(query) {
+    await ready;
+    const all = [
+      ...Object.entries(aliases).map(([name, target]) => ({ name, target })),
+      ...startApps.map((a) => ({ name: a.Name, target: `shell:AppsFolder\\${a.AppID}` })),
+    ];
+    const name = nearest(
+      query,
+      all.map((a) => a.name),
+    );
+    return all.find((a) => a.name === name) || null;
+  }
+
+  return { find, suggest, ready, count: () => startApps.length };
 }
 
-module.exports = { createAppCatalog, normalize, score, levenshtein };
+module.exports = { createAppCatalog, normalize, score, levenshtein, nearest };

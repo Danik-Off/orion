@@ -1,4 +1,10 @@
-/* global createMic, createSpeaker, playChime, isStopForOrion, createRadio, createAlarm */
+/* global createCapsule, lingerMs, tailText, createMic, createSpeaker, playChime, setQuiet, nightLevel, isStopForOrion, isContinuation, hintsFor, renderCards, mediaCommand, confirmAnswer, isInterjection, speakerOf,
+   isStrangerVoice, createRadio, createAlarm,
+   showPanel, hidePanel, wizardHeard, cancelWizard, applySettings */
+/* exported peopleBtn, configureVoice, showPinned */
+// Окно разговора: состояние, слушание, озвучка и запрос. Рядом: panel.js — панель с кнопками,
+// people.js — запись голоса и люди, setup-ui.js — старт, установка и обновления (подключаются после этого файла).
+// Общее состояние (name, voices, wizard, speaker…) объявлено здесь, а меняется и там.
 const $ = (s) => document.querySelector(s);
 const core = $('#core');
 const log = $('#log');
@@ -12,10 +18,11 @@ const peopleBtn = $('#owner');
 const panel = $('#panel');
 
 const LISTEN_MS = 8000; // сколько ждать НАЧАЛА фразы после «Орион» или горячей клавиши
-const ORB_LINGER_MS = 4000; // плашка в углу исчезает, когда всё сказано
 let followUpMs = 7000; // после ответа можно продолжать разговор без ключевого слова
 
+// eslint-disable-next-line prefer-const -- меняется в people.js / setup-ui.js
 let name = 'Орион';
+// eslint-disable-next-line prefer-const -- меняется в people.js / setup-ui.js
 let voices = { available: false, people: [], require: 'off' }; // записанные голоса
 let mode = 'full';
 let voiceOn = true;
@@ -33,6 +40,7 @@ let pendingQuestion = null; // вопрос со свободным ответо
 const awaitingAnswer = () => !!pendingConfirm || !!pendingQuestion;
 let talkingTo; // с кем сейчас разговор: id человека, null — гость, undefined — разговора нет
 let ignoredInRow = 0; // фразы подряд, которые модель сочла обращёнными не к Ориону
+// eslint-disable-next-line prefer-const -- меняется в people.js / setup-ui.js
 let wizard = null; // мастер записи голоса: { step, phrases, stage: 'phrases'|'name'|'honorific', name, id }
 
 const isListening = () => Date.now() < listenUntil || hearing;
@@ -78,6 +86,7 @@ function refreshState() {
   if (speaking) s = 'speaking';
   if (Date.now() < errorUntil) s = 'error';
   core.dataset.state = s;
+  if (!isListening() || listenSource !== 'followup') delete core.dataset.follow;
   // Радио тише, пока Орион слушает команду или говорит
   radio.duck(s === 'listening' || s === 'hearing' || s === 'speaking');
 }
@@ -94,7 +103,22 @@ function flashError() {
   setTimeout(refreshState, 1600);
 }
 
-function addMsg(kind, text, sources) {
+// Подсказки на пустом экране — по времени суток; обновляются, когда экран снова пуст
+function showHints() {
+  hints.replaceChildren(
+    ...hintsFor(new Date().getHours()).map((t) => {
+      const b = document.createElement('button');
+      b.className = 'chip';
+      b.textContent = t;
+      return b;
+    }),
+  );
+  hints.hidden = false;
+}
+showHints();
+
+// cards — карточки ответа (погода, таймер): cards.js
+function addMsg(kind, text, sources, cards) {
   hints.hidden = true;
   const el = document.createElement('div');
   el.className = `msg ${kind}`;
@@ -118,6 +142,8 @@ function addMsg(kind, text, sources) {
     }
     el.append(box);
   }
+  const extra = cards && renderCards(cards);
+  if (extra) el.append(extra);
   log.append(el);
   log.scrollTop = log.scrollHeight;
   return el;
@@ -139,6 +165,7 @@ new ResizeObserver(() => {
 // --- Присутствие: полное окно / плашка в углу / скрыто -----------------------------
 
 function showOrbIfHidden() {
+  capsule.cancelClose(); // капсула как раз сжималась — передумала
   if (mode === 'hidden') window.jarvis.presence('orb');
   clearTimeout(hideTimer);
 }
@@ -151,35 +178,44 @@ function hideWindow() {
   window.jarvis.presence('hidden');
 }
 
+// Капсула в углу (capsule.js): висит, пока ответ читают (дольше — для длинного), под мышью — не уходит;
+// уходя, сжимается в кружок, затем окно прячется
 function scheduleOrbHide() {
   clearTimeout(hideTimer);
   if (mode !== 'orb') return;
   hideTimer = setTimeout(() => {
     if (mode !== 'orb' || dialogActive()) return;
-    // Считаем плашку скрытой сразу, не дожидаясь ответа окна: иначе «Орион…», сказанное в этот момент,
-    // не вызовет её снова (showOrbIfHidden видел бы ещё 'orb')
-    mode = 'hidden';
-    window.jarvis.presence('hidden');
-  }, ORB_LINGER_MS);
+    if (capsule.hovered()) return scheduleOrbHide(); // читают — ждём, пока мышь уйдёт
+    capsule.close();
+  }, lingerMs(caption.textContent));
 }
 
-// Плашка растёт вверх под весь текст: сообщаем окну нужную высоту (подложка + отступы сверху и снизу)
-const captionsEl = $('.captions');
-const ORB_TEXT_GAP = 38;
-// Меряем полную высоту текста (scrollHeight), а не видимую: подложка ограничена высотой окна и иначе не вырастет
-const reportOrbHeight = () => mode === 'orb' && window.jarvis.orbHeight(captionsEl.scrollHeight + 2 /* рамка */ + ORB_TEXT_GAP);
-const orbResize = new ResizeObserver(reportOrbHeight);
-[captionsEl, caption, statusEl].forEach((el) => orbResize.observe(el));
+const capsule = createCapsule({
+  mode: () => mode,
+  // Считаем капсулу скрытой сразу, не дожидаясь ответа окна: иначе «Орион…», сказанное в этот момент,
+  // не вызовет её снова (showOrbIfHidden видел бы ещё 'orb')
+  onHidden: () => {
+    if (mode !== 'orb' || dialogActive()) return;
+    mode = 'hidden';
+    window.jarvis.presence('hidden');
+  },
+  onStop: () => stopAll(), // крестик посреди разговора — как «Орион, стоп»
+});
 
 window.jarvis.onMode((m) => {
+  const was = mode;
   mode = m;
   document.body.className = `mode-${m}`;
   if (m === 'hidden') clearLog(); // окно скрыто — следующий раз начинаем с чистого экрана
   if (m === 'orb') {
+    if (was !== 'orb') capsule.open(); // из кружка — в капсулу
     scheduleOrbHide();
-    requestAnimationFrame(reportOrbHeight); // текст мог смениться, пока плашка была скрыта
+    requestAnimationFrame(capsule.report); // текст мог смениться, пока капсула была скрыта
   }
 });
+
+// Распознаваемая фраза: в капсуле — её конец (две строки), в полном окне — целиком
+const showHeard = (text) => (caption.textContent = mode === 'orb' ? tailText(text) : text);
 
 // --- Микрофон и слушание ----------------------------------------------------------
 
@@ -211,6 +247,13 @@ function listen(ms, source) {
   if (!isListening()) window.jarvis.setListening(true); // ждём фразу — тихая речь не должна теряться
   listenUntil = Date.now() + ms;
   listenSource = source;
+  // Кольцо «говорите без имени» тает за то время, что слушаем продолжение (заново с каждым продолжением)
+  delete core.dataset.follow;
+  if (source === 'followup') {
+    core.style.setProperty('--follow-ms', `${ms}ms`);
+    void core.offsetWidth; // перезапуск анимации
+    core.dataset.follow = '';
+  }
   clearTimeout(listenTimer);
   clearTimeout(hideTimer);
   listenTimer = setTimeout(checkListenEnd, ms);
@@ -245,7 +288,10 @@ function stopAll() {
 }
 
 function stopListening({ expired = false } = {}) {
-  if (expired && !busy) endDialog(); // перестал слушать, а новой фразы не было — контекст сбрасывается
+  if (expired && !busy) {
+    endDialog(); // перестал слушать, а новой фразы не было — контекст сбрасывается
+    if (mode === 'orb') playChime('end'); // разговор окончен — слышно, даже если на капсулу не смотрят
+  }
   if (!wizard) window.jarvis.setListening(false);
   listenUntil = 0;
   hearing = false;
@@ -265,31 +311,9 @@ async function toggleMic() {
   }
 }
 
-// Кто говорит → id человека; null — голос чужой; undefined — не проверялось (нет записанных, слишком коротко)
-// Два записанных голоса почти одинаково похожи: если один из них — текущий собеседник, это он
-const voiceId = (voice) => {
-  if (!voice) return undefined;
-  if (voice.match) return voice.person.id;
-  if (voice.ambiguous) return talkingTo && voice.candidates?.includes(talkingTo) ? talkingTo : undefined;
-  return null;
-};
-
-// Фразу без имени от другого человека считаем разговором не с Орионом.
-// Неоднозначность между записанными людьми — не «чужой» (так ошибочно отсекались свои фразы).
-function isStranger(voice, source) {
-  if (!voices.people.length || !voice || voice.ambiguous) return false;
-  if (voices.require === 'always' && !voice.match) return true;
-  if (source !== 'followup' || voices.require === 'off' || talkingTo === undefined) return false;
-  // Продолжение без имени — только от того, кто начал разговор (гость — любой незнакомый голос)
-  return talkingTo === null ? voice.match : !voice.match || voice.person.id !== talkingTo;
-}
-
-// (\b не работает с кириллицей — конец слова это пробел или конец строки)
-const YES = /^(да|ага|подтверждаю|конечно|давай|выполняй|ок|окей)(\s|$)/;
-const NO = /^(нет|отмена|отмени|не надо|стоп)(\s|$)/;
-// Ответ в конце фразы: человек повторил просьбу и подтвердил — «выключи компьютер через час, да»
-const YES_END = /(^|\s)(да|ага|подтверждаю|конечно|давай|выполняй)$/;
-const NO_END = /(^|\s)(нет|не надо|отмена)$/;
+// Кто говорит и чужой ли голос — speakerOf и isStrangerVoice в commands.js (с текущим собеседником)
+const voiceId = (voice) => speakerOf(voice, talkingTo);
+const isStranger = (voice, source) => isStrangerVoice({ voice, source, talkingTo, voices });
 
 // STOP_WORDS и isStopForOrion — в commands.js
 
@@ -316,7 +340,7 @@ window.jarvis.onHeard(({ partial, final, command, voice }) => {
     if (!listening) listen(LISTEN_MS, 'wake');
     hearing = true;
     showOrbIfHidden();
-    caption.textContent = command || partial;
+    showHeard(command || partial);
     refreshState();
     return;
   }
@@ -329,13 +353,15 @@ window.jarvis.onHeard(({ partial, final, command, voice }) => {
   // Ждём ответ на вопрос («в каком вы городе?») — фраза и есть ответ (с именем — без него)
   if (pendingQuestion && !isStranger(voice, 'followup')) return answerQuestion(command || final);
   if (pendingConfirm) {
-    const answer = YES.test(final) || YES_END.test(final) ? true : NO.test(final) || NO_END.test(final) ? false : null;
+    const answer = confirmAnswer(final);
     if (answer !== null && !isStranger(voice, 'followup')) return answerConfirm(answer);
   }
   // «Стоп», пока ждёт продолжения разговора (с именем или без) — закончить разговор и не слушать
   if (isStopForOrion({ command, final, listening, dialogOpen: talkingTo !== undefined }) && !isStranger(voice, 'followup'))
     return stopAll();
 
+  // Играет радио или звук для сна — «пауза», «стоп», «дальше», «громче» без имени (mediaCommand в commands.js)
+  if (command === null && !listening && radio.active() && !isStranger(voice, 'wake') && mediaWithoutName(final, voice)) return;
   if (command === null && !listening) return;
   const source = command !== null ? 'wake' : listenSource;
   if (isStranger(voice, source)) {
@@ -349,7 +375,7 @@ window.jarvis.onHeard(({ partial, final, command, voice }) => {
     return listen(LISTEN_MS, 'wake');
   }
   const text = command ?? final;
-  if (/^(э+|а+|м+|ну|угу|хм+)$/.test(text)) return; // междометия — не команда
+  if (isInterjection(text)) return; // междометия — не команда
   listenUntil = 0;
   clearTimeout(listenTimer);
   window.jarvis.setListening(false); // фраза получена — снова экономный режим
@@ -364,26 +390,53 @@ window.jarvis.onHeard(({ partial, final, command, voice }) => {
   submit(text, sameVoice ? 'followup-voice' : source, personId);
 });
 
+// Команда проигрывателю без имени. Чужой записанный голос (кто-то другой в комнате) — не командует.
+function mediaWithoutName(final, voice) {
+  const what = mediaCommand(final);
+  if (!what || (what === 'next' && radio.sound())) return false; // у шума дождя «следующего» нет
+  if (voices.people.length && voice && !voice.match && !voice.ambiguous) return false;
+  playChime();
+  if (what === 'stop') radio.stop();
+  else if (what === 'pause') radio.pause();
+  else if (what === 'resume') radio.resume();
+  else {
+    const said = { next: 'включи другое радио', louder: 'сделай громче', quieter: 'сделай тише' }[what];
+    submit(said, 'wake', voiceId(voice));
+  }
+  refreshState();
+  return true;
+}
+
 // Пока модель думает над голосовой фразой, человек может:
-//  • договорить её после паузы — запрос отменяется, модель получает фразу целиком;
+//  • договорить её после короткой паузы — запрос отменяется, модель получает фразу целиком;
 //  • сказать «Орион, …» — новая команда вместо старой.
-// Посторонние голоса и эхо не мешают: дополнением считается только голос того же человека.
+// Посторонние голоса и эхо не мешают: дополнением считается только голос того же человека, начавший почти сразу
+// и коротко (isContinuation) — долгий разговор в комнате не приклеивается к запросу и не задерживает ответ.
 function heardWhileThinking({ partial, final, command, voice }) {
   if (!pending || pending.source === 'text') return;
   const byName = command !== null && command !== undefined;
+  pending.speechAt ??= Date.now(); // когда зазвучала новая речь
+  const continuing = () => isContinuation({ askedAt: pending.at, startedAt: pending.speechAt, text: partial || final });
   if (partial) {
+    if (!byName && !continuing()) {
+      hearing = false;
+      if (held) releaseHeld(); // ждали договаривания — это не оно
+      return;
+    }
     hearing = true; // ответ, если придёт сейчас, подождёт конца фразы
-    caption.textContent = byName ? command || '…' : `${pending.text} ${partial}`;
+    showHeard(byName ? command || '…' : `${pending.text} ${partial}`);
     return;
   }
   if (!final) return;
   hearing = false;
+  const wasContinuation = continuing();
+  pending.speechAt = null; // следующая речь — снова с отсчёта
   // «Орион, стоп» — бросить запрос, замолчать и не слушать
   if (isStopForOrion({ command, busy: true })) return stopAll();
   if (byName && command) return submit(command, 'wake', voiceId(voice), { replace: true });
   const id = voiceId(voice);
   const other = voices.people.length && voice && !voice.ambiguous && (pending.personId ? id !== pending.personId : voice.match);
-  if (other || /^(э+|а+|м+|ну|угу|хм+)$/.test(final) || byName) {
+  if (other || !wasContinuation || isInterjection(final) || byName) {
     caption.textContent = pending.text;
     return releaseHeld();
   }
@@ -395,15 +448,35 @@ function heardWhileThinking({ partial, final, command, voice }) {
 let bargeIn = true; // можно ли перебить именем (нельзя, если Орион сам произносит своё имя)
 let bargingIn = false;
 
+// Страховка: озвучка не сообщила, что закончила (сбой синтеза, звуковое устройство пропало), — не висеть
+// в «Отвечаю» вечно (известная беда голосовых помощников). Срок — по длине сказанного: 15 с + 0,12 с на символ
+let spoken = 0; // символов в текущем ответе
+let speakWatch = null;
+function watchSpeech(text = '') {
+  spoken += String(text).length;
+  clearTimeout(speakWatch);
+  speakWatch = setTimeout(
+    () => {
+      if (!speaking) return;
+      speaker.stop();
+      speakerHooks.onEnd();
+    },
+    15_000 + spoken * 120,
+  );
+}
+
 const speakerHooks = {
   onStart: () => {
     speaking = true;
+    watchSpeech();
     showOrbIfHidden(); // окно могли скрыть, пока Орион думал, — ответ всё равно должен быть виден
     freshStart();
     syncMic();
     refreshState();
   },
   onEnd: () => {
+    clearTimeout(speakWatch);
+    spoken = 0;
     // Отзвучала заготовка («Сейчас поищу.»), а ответ ещё готовится — это не конец ответа и не конец диалога
     if (interim) {
       interim = false;
@@ -430,7 +503,17 @@ const speakerHooks = {
     refreshState();
   },
 };
+// Ночной режим (настройки → «Голос» → «Ночью»): тише голос и сигнал «слушаю»
+let night = null;
+setQuiet(() => nightLevel(night));
 let speaker = createSpeaker({ ownVoice: false, ...speakerHooks });
+// Настройки голоса из ядра (при старте и после установки): продолжение без имени, эхоподавление, свой голос
+function configureVoice(s) {
+  night = s.night || null;
+  followUpMs = (s.followUpSeconds || 7) * 1000;
+  echoCancellation = s.echoCancellation;
+  speaker = createSpeaker({ ownVoice: s.tts, ...speakerHooks });
+}
 let previewing = false; // «Прослушать» в настройках — это не ответ, разговор не заканчивается
 
 // --- Настройки — отдельное окно (settings/). Отсюда: открыть его, прослушать голос, применить изменения ---
@@ -445,6 +528,8 @@ window.jarvis.onPreviewVoice(() => {
 });
 // Значения, которые окно держит у себя, — сразу; остальное читает ядро
 window.jarvis.onSettingsChanged((patch) => {
+  for (const key of ['enabled', 'from', 'to', 'volume'])
+    if (`speech.night.${key}` in patch) night = { ...night, [key]: patch[`speech.night.${key}`] };
   if ('speech.followUpSeconds' in patch) followUpMs = patch['speech.followUpSeconds'] * 1000;
   if ('speech.speaker.require' in patch) voices.require = patch['speech.speaker.require'];
   if ('speech.ttsSpeaker' in patch || 'speech.ttsSpeed' in patch) applySettings();
@@ -454,7 +539,8 @@ function speak(text, { expectReply = false } = {}) {
   interim = false; // заготовку (если ещё звучит) сменяет настоящий ответ
   followUp = expectReply;
   bargeIn = !String(text).toLowerCase().includes(name.toLowerCase().slice(0, 4)); // «Меня зовут Орион» — не будить самого себя
-  if (voiceOn && text) return speaker.speak(text);
+  spoken = 0;
+  if (voiceOn && text) return (watchSpeech(text), speaker.speak(text));
   speakerHooks.onEnd();
 }
 
@@ -507,6 +593,7 @@ window.jarvis.onSayPart(({ id, text }) => {
   if (text.toLowerCase().includes(name.toLowerCase().slice(0, 4))) bargeIn = false; // «я Орион» — не будить себя
   live.text = live.text ? `${live.text} ${text}` : text;
   caption.textContent = live.text;
+  watchSpeech(text);
   live.stream.push(text);
 });
 
@@ -526,7 +613,8 @@ async function submit(text, source = 'text', personId, { replace = false } = {})
   let msg = replace && pending?.msg && !source.startsWith('followup') ? pending.msg : null;
   if (msg) msg.textContent = text;
   else if (!source.startsWith('followup')) msg = addMsg('user', text);
-  pending = { text, source, personId, msg };
+  pending = { text, source, personId, msg, at: Date.now(), speechAt: null };
+  capsule.clear(); // карточки прошлого ответа — не к этому вопросу
   caption.textContent = text;
   setStatus('Думаю…');
   refreshState();
@@ -544,7 +632,7 @@ async function submit(text, source = 'text', personId, { replace = false } = {})
   if (hearing && source !== 'text' && !r.cancelled && !live?.stream) {
     held = r;
     const heldAt = Date.now();
-    const wait = () => (hearing && Date.now() - heldAt < 10000 ? (heldTimer = setTimeout(wait, 500)) : releaseHeld());
+    const wait = () => (hearing && Date.now() - heldAt < 5000 ? (heldTimer = setTimeout(wait, 500)) : releaseHeld());
     heldTimer = setTimeout(wait, HOLD_MS);
     return;
   }
@@ -587,7 +675,8 @@ function finishAsk(r, text, source) {
       talkingTo = r.person ?? null;
       const mine = source.startsWith('followup') ? addMsg('user', text) : asked;
       if (mine && r.speakerLabel) mine.dataset.who = r.speakerLabel; // кто говорил — по голосу
-      addMsg(r.error ? 'error' : 'bot', r.say || '…', r.sources);
+      addMsg(r.error ? 'error' : 'bot', r.say || '…', r.sources, r.cards);
+      capsule.showCards(r.cards);
       caption.textContent = r.say || '';
       if (r.error) flashError();
     }
@@ -641,6 +730,7 @@ function answerConfirm(ok) {
   window.jarvis.replyConfirm(pendingConfirm, ok);
   pendingConfirm = null;
   $('#confirm').hidden = true;
+  capsule.clear();
   addMsg('muted', ok ? 'Подтверждено' : 'Отменено');
   stopListening();
 }
@@ -649,6 +739,7 @@ window.jarvis.onConfirm(({ id, text }) => {
   pendingConfirm = id;
   $('#confirm-text').textContent = text;
   $('#confirm').hidden = false;
+  capsule.ask(answerConfirm); // в капсуле — свои «Да / Нет»
   speak(`${text} Скажите «да» или «нет».`, { expectReply: true });
 });
 $('#confirm-yes').addEventListener('click', () => answerConfirm(true));
@@ -679,252 +770,6 @@ window.jarvis.onQuestion(({ id, text }) => {
   speak(text, { expectReply: true });
 });
 
-// Ядро предлагает записать голос (знакомство) — тот же мастер, что у кнопки с человечком
-window.jarvis.onEnrollOffer(() => !wizard && startWizard());
-
-// --- Люди: запись голоса, имя и обращение -------------------------------------------------
-
-// Панель: текст, необязательное поле ввода и кнопки [подпись, действие, основная?].
-// modal — посреди окна поверх всего (вопрос, без ответа на который дальше не пойти)
-function showPanel(text, buttons, field, { modal = false } = {}) {
-  panel.classList.toggle('modal', modal);
-  $('#backdrop').hidden = !modal;
-  $('#panel-text').textContent = text;
-  const actions = $('#panel-actions');
-  actions.replaceChildren();
-  const box = $('#panel-field');
-  box.replaceChildren();
-  if (field) {
-    const f = document.createElement('input');
-    f.className = 'panel-input';
-    f.placeholder = field.placeholder || '';
-    f.value = field.value || '';
-    f.maxLength = 40;
-    f.addEventListener('keydown', (e) => e.key === 'Enter' && field.onEnter?.(f.value));
-    box.append(f);
-    setTimeout(() => f.focus(), 0);
-  }
-  for (const [label, fn, primary] of buttons) {
-    const b = document.createElement('button');
-    b.className = `btn${primary ? ' primary' : ''}`;
-    b.textContent = label;
-    b.addEventListener('click', () => fn($('#panel-field input')?.value));
-    actions.append(b);
-  }
-  panel.hidden = false;
-}
-const hidePanel = () => {
-  panel.hidden = true;
-  $('#backdrop').hidden = true;
-};
-
-async function refreshPeople() {
-  voices = (await window.jarvis.people()) || voices;
-  peopleBtn.classList.toggle('on', voices.people.length > 0);
-}
-
-function showPeople() {
-  const list = voices.people
-    .map((p) => `• ${p.name || 'без имени'} — «${p.honorific}», порог ${p.threshold}, образцов ${p.samples}`)
-    .join('\n');
-  const last = voices.last
-    ? `\nПоследняя фраза: сходство ${voices.last.score} с «${voices.last.name || 'без имени'}» — ${voices.last.match ? 'узнан' : 'не узнан'}.`
-    : '';
-  const text = voices.people.length
-    ? `Я узнаю по голосу:\n${list}${last}\n\nБез обращения по имени я продолжаю разговор только с тем, кто его начал. ` +
-      'Если узнаю плохо — перезапишите голос: порог подстроится под ваш микрофон.'
-    : 'Запишу ваш голос по четырём фразам и спрошу, как к вам обращаться. После этого я буду узнавать вас, ' +
-      'обращаться «сэр» или «мисс», помнить именно ваше и не реагировать на чужие разговоры.';
-  const buttons = [[voices.people.length ? 'Добавить человека' : 'Начать', () => startWizard(), true]];
-  buttons.push(['Настроить отклик на имя', () => startWakeTuning()]);
-  for (const p of voices.people) buttons.push([`Изменить: ${p.name || 'без имени'}`, () => editPerson(p)]);
-  buttons.push(['Закрыть', hidePanel]);
-  showPanel(text, buttons);
-}
-
-function editPerson(p) {
-  showPanel(
-    `${p.name || 'Без имени'} — обращение «${p.honorific}».`,
-    [
-      ['Сэр', async () => (await window.jarvis.personUpdate(p.id, { honorific: 'сэр' }), refreshPeople().then(showPeople))],
-      ['Мисс', async () => (await window.jarvis.personUpdate(p.id, { honorific: 'мисс' }), refreshPeople().then(showPeople))],
-      ['Переименовать', async (value) => (await window.jarvis.personUpdate(p.id, { name: value }), refreshPeople().then(showPeople))],
-      ['Перезаписать голос', () => startWizard(p)],
-      [
-        'Удалить',
-        async () => {
-          await window.jarvis.personRemove(p.id);
-          if (talkingTo === p.id) talkingTo = undefined;
-          await refreshPeople();
-          showPeople();
-        },
-      ],
-      ['Назад', showPeople],
-    ],
-    { placeholder: 'Новое имя', value: p.name },
-  );
-}
-
-async function startWizard(existing) {
-  if (!mic.isOn()) await toggleMic();
-  if (!mic.isOn()) return;
-  interrupt({ end: true });
-  const { needed } = await window.jarvis.enrollStart();
-  // Каждая фраза начинается с имени: заодно запоминаем, как распознаватель слышит ваше «Орион».
-  // Распознанный текст сверяется с фразой — фон, телевизор или чужая речь в образцы голоса не попадут.
-  wizard = {
-    stage: 'phrases',
-    step: 0,
-    needed,
-    id: existing?.id,
-    heard: [],
-    phrases: [
-      `${name}, какая сегодня погода и что у меня в планах?`,
-      `${name}, включи, пожалуйста, какую-нибудь спокойную музыку.`,
-      `${name}, напомни мне через десять минут проверить почту.`,
-      `${name}, расскажи что-нибудь интересное про космос.`,
-    ],
-  };
-  window.jarvis.setListening(true);
-  promptPhrase();
-  refreshState();
-}
-
-function promptPhrase(note = '') {
-  const { step, needed, phrases, heard } = wizard;
-  const done = heard.length ? `\n\nЗаписано: ${heard.map((h) => `«${h}» ✓`).join(' · ')}` : '';
-  const tip = step ? '' : '\nГоворите так, как обычно обращаетесь ко мне, — с того места, где обычно сидите.';
-  showPanel(`${note}Фраза ${step + 1} из ${needed}. Скажите обычным голосом:\n«${phrases[step]}»${tip}${done}`, [['Отмена', cancelWizard]]);
-}
-
-function promptName() {
-  wizard.stage = 'name';
-  speak('Как к вам обращаться?');
-  showPanel(
-    'Как к вам обращаться? Скажите имя или напишите его.',
-    [
-      ['Дальше', (value) => value?.trim() && promptHonorific(value.trim()), true],
-      ['Отмена', cancelWizard],
-    ],
-    { placeholder: 'Имя', onEnter: (v) => v.trim() && promptHonorific(v.trim()) },
-  );
-}
-
-function promptHonorific(personName) {
-  wizard.stage = 'honorific';
-  wizard.name = personName;
-  speak(`Приятно познакомиться, ${personName}. Обращаться к вам «сэр» или «мисс»?`);
-  showPanel(`${personName}, обращаться к вам «сэр» или «мисс»?`, [
-    ['Сэр', () => finishWizard('сэр'), true],
-    ['Мисс', () => finishWizard('мисс'), true],
-    ['Отмена', cancelWizard],
-  ]);
-}
-
-async function finishWizard(honorific) {
-  window.jarvis.setListening(false);
-  const person = await window.jarvis.enrollFinish({ name: wizard.name, honorific, id: wizard.id });
-  wizard = null;
-  await refreshPeople();
-  if (person?.id) talkingTo = person.id;
-  // Что получилось: порог узнавания, громкость голоса относительно шума, усиление микрофона
-  const details = [];
-  if (person?.threshold) details.push(`порог узнавания ${person.threshold}`);
-  if (typeof person?.level === 'number' && typeof person?.noise === 'number') {
-    details.push(`голос громче фона на ${Math.round(person.level - person.noise)} дБ`);
-  }
-  if (person?.gain) details.push(`усиление микрофона +${Math.round(person.gain)} дБ`);
-  const similar = person?.similar
-    ? `\n\nВаш голос очень похож на записанный голос «${person.similar.name || 'без имени'}». Если это тоже вы — удалите лишнюю запись в «Люди», иначе я буду вас путать.`
-    : '';
-  showPanel(
-    `Готово, ${honorific} ${person?.name || ''}. Теперь я узнаю вас по голосу.`.replace(/\s+\./, '.') +
-      (details.length ? `\n${details.join(', ')}.` : '') +
-      similar,
-    [['Отлично', hidePanel, true]],
-  );
-  speak(`Готово, ${honorific}. Теперь я узнаю вас по голосу.`);
-  playChime();
-  refreshState();
-}
-
-// Настройка отклика на имя: человек трижды говорит только имя
-async function startWakeTuning() {
-  if (!mic.isOn()) await toggleMic();
-  if (!mic.isOn()) return;
-  interrupt();
-  wizard = { stage: 'wake', step: 0, needed: 3, log: [] };
-  window.jarvis.setListening(true);
-  promptWake();
-  refreshState();
-}
-
-function promptWake(note = '') {
-  const { step, needed, log: heardSoFar } = wizard;
-  const heard = heardSoFar.length ? `\n\nУслышал: ${heardSoFar.join(' · ')}` : '';
-  showPanel(`${note}Скажите «${name}» — только имя, обычным голосом (${step + 1} из ${needed}).${heard}`, [
-    ['Готово', finishWakeTuning],
-    ['Отмена', cancelWizard],
-  ]);
-}
-
-function finishWakeTuning() {
-  window.jarvis.setListening(false);
-  const learned = wizard?.log.filter((x) => x.includes('запомнил')).length || 0;
-  wizard = null;
-  showPanel(learned ? `Готово: запомнил, как слышу ваше «${name}».` : `Ваше «${name}» я и так слышу хорошо.`, [
-    ['Отлично', hidePanel, true],
-  ]);
-  refreshState();
-}
-
-// Во время мастера всё услышанное — это ответы мастеру
-async function wizardHeard(text) {
-  if (wizard.stage === 'wake') {
-    const r = await window.jarvis.wakeLearn();
-    if (!wizard) return;
-    wizard.log.push(r.added.length ? `«${r.heard}» — запомнил` : r.recognized ? `«${r.heard}» — узнаю` : `«${r.heard}» — не похоже на имя`);
-    wizard.step += 1;
-    return wizard.step >= wizard.needed ? finishWakeTuning() : promptWake();
-  }
-  if (wizard.stage === 'phrases') {
-    const r = await window.jarvis.enrollAdd(wizard.phrases[wizard.step]);
-    if (!wizard) return;
-    if (r.error) return promptPhrase(`${r.error}.\n\n`);
-    wizard.heard.push(r.heard);
-    wizard.step = r.count;
-    return r.done ? promptName() : promptPhrase();
-  }
-  if (wizard.stage === 'name') {
-    // «меня зовут Саша» → «Саша»
-    const n = text
-      .replace(/^(меня зовут|зови меня|называй меня|я)\s+/i, '')
-      .split(/\s+/)
-      .slice(0, 2)
-      .join(' ');
-    return promptHonorific(n.charAt(0).toUpperCase() + n.slice(1));
-  }
-  if (wizard.stage === 'honorific') {
-    if (/мисс|мэм|мадам|девуш|женщ/i.test(text)) return finishWizard('мисс');
-    if (/сэр|сер|мужч|парен/i.test(text)) return finishWizard('сэр');
-  }
-}
-
-function cancelWizard() {
-  window.jarvis.setListening(false);
-  wizard = null;
-  window.jarvis.enrollCancel();
-  hidePanel();
-  refreshState();
-}
-
-peopleBtn.addEventListener('click', async () => {
-  if (wizard) return cancelWizard();
-  if (!panel.hidden) return hidePanel();
-  await refreshPeople(); // свежая «последняя оценка»
-  showPeople();
-});
-
 // --- Напоминания, горячая клавиша, кнопки --------------------------------------------
 
 // Орион говорит сам (например, что нового после обновления)
@@ -952,7 +797,7 @@ window.jarvis.onSessionEnd(() => {
 
 function clearLog() {
   log.replaceChildren();
-  hints.hidden = false;
+  showHints();
 }
 
 // Горячая клавиша: перебить речь и сразу слушать — без ключевого слова.
@@ -984,8 +829,11 @@ core.addEventListener('click', async (e) => {
   }
 });
 
-// Клик по плашке в углу разворачивает полное окно.
-document.body.addEventListener('click', () => mode === 'orb' && window.jarvis.presence('full'));
+// Клик по капсуле (не по её кнопкам и карточкам) разворачивает полное окно
+document.body.addEventListener(
+  'click',
+  (e) => mode === 'orb' && e.target.closest('.stage') && !e.target.closest('button, .orb-extra') && window.jarvis.presence('full'),
+);
 
 micBtn.addEventListener('click', toggleMic);
 voiceBtn.addEventListener('click', () => {
@@ -999,7 +847,7 @@ $('#reset').addEventListener('click', () => {
   window.jarvis.reset(); // разговор закрывается, полезное уходит в память
   talkingTo = undefined;
   log.replaceChildren();
-  hints.hidden = false;
+  showHints();
   caption.textContent = '';
   setStatus('Начнём с чистого листа.', true);
 });
@@ -1016,165 +864,26 @@ pinBtn.addEventListener('click', () => {
   showPinned(on);
   window.jarvis.pin(on);
 });
+// Меню «⋯»: редкие действия. Закрывается выбором пункта, щелчком мимо и Esc
+const menu = $('#menu');
+const moreBtn = $('#more');
+function toggleMenu(open = menu.hidden) {
+  menu.hidden = !open;
+  moreBtn.setAttribute('aria-expanded', String(open));
+  moreBtn.classList.toggle('on', open);
+}
+moreBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleMenu();
+});
+menu.addEventListener('click', (e) => e.target.closest('.menu-item') && toggleMenu(false));
+document.addEventListener('click', (e) => !menu.hidden && !menu.contains(e.target) && toggleMenu(false));
+
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
+  if (!menu.hidden) return toggleMenu(false);
   if (busy) return cancelThinking(); // Esc, пока думает, — отменить запрос
   if (speaking) return interrupt({ end: true }); // первый Esc — замолчать
   if (!panel.hidden) return wizard ? cancelWizard() : hidePanel();
   hideWindow();
 });
-
-// --- Старт ------------------------------------------------------------------------
-
-let installing = false;
-
-// Настройки и доступные модули — при старте и каждый раз, когда установщик что-то подключил
-async function applySettings() {
-  const s = await window.jarvis.settings();
-  if (!s) return;
-  name = s.name;
-  followUpMs = (s.followUpSeconds || 7) * 1000;
-  echoCancellation = s.echoCancellation;
-  voices = s.speaker;
-  mode = s.mode;
-  document.body.className = `mode-${mode}`;
-  document.title = name;
-  $('#name').textContent = name;
-  $('#model').textContent = s.version || s.model;
-  $('#model').title = s.version || s.model; // подпись версии обрезается — целиком в подсказке
-  showPinned(s.pinned === true);
-  input.placeholder = `Напишите или скажите «${name}…»`;
-  speaker = createSpeaker({ ownVoice: s.tts, ...speakerHooks });
-  micBtn.hidden = !s.stt;
-  peopleBtn.hidden = !s.stt || !voices.available;
-  peopleBtn.classList.toggle('on', voices.people.length > 0);
-  if (s.stt && s.listenOnStart && !mic.isOn()) await toggleMic();
-  if (!installing) {
-    setStatus(
-      s.stt ? `Скажите «${name}…» или нажмите ${s.hotkey.replace('CommandOrControl', 'Ctrl')}` : 'Голосовой ввод пока не установлен.',
-      true,
-    );
-  }
-  refreshState();
-  return s;
-}
-
-// --- Установка моделей при первом запуске ---
-
-const setupBox = $('#setup');
-window.jarvis.onSetup(async (r) => {
-  if (r.finished) {
-    installing = false;
-    const failed = setupBox.classList.contains('error');
-    if (!failed) setupBox.hidden = true;
-    await applySettings();
-    if (failed) return;
-    // Докачали большую модель (из предложения или настроек)
-    if (r.stages?.includes('brain')) {
-      return speak(
-        'Готово, я стал умнее. Если захотите, могу подстраховываться внешней моделью — включите это в настройках, раздел «Модели».',
-      );
-    }
-    if (r.stages && !r.stages.includes('voice')) return; // докачали часть из настроек — без приветствия
-    return speak(`Готов к работе. Скажите «${name}» — и я вас слушаю.`);
-  }
-  installing = true;
-  setupBox.hidden = false;
-  setupBox.classList.toggle('error', !!r.error);
-  if (r.title) $('#setup-title').textContent = r.progress != null && !r.done ? `${r.title} — ${Math.round(r.progress * 100)}%` : r.title;
-  $('#setup-fill').style.width = `${Math.round((r.progress ?? (r.done ? 1 : 0)) * 100)}%`;
-  if (r.needOllama) {
-    showPanel('Для работы мне нужен Ollama — программа, в которой живёт языковая модель. Установите её и перезапустите меня.', [
-      ['Скачать Ollama', () => window.jarvis.openLink('https://ollama.com/download'), true],
-      ['Позже', hidePanel],
-    ]);
-  }
-  if (r.ready === 'voice') {
-    await applySettings();
-    speak(
-      `Я ${name}, ваш голосовой ассистент. Сейчас готовлюсь к работе: устанавливаю слух и загружаю знания. Это займёт несколько минут.`,
-    );
-  }
-  if (r.ready === 'hearing') await applySettings(); // микрофон включится, как только появится распознавание
-});
-
-// Первый запуск: что нужно скачать и сколько это весит — до начала загрузки.
-// «Позже» прячет вопрос, но под реактором остаётся строка, по которой его можно открыть снова.
-let setupOffer = null;
-function showSetupOffer() {
-  const { parts = [], total, ollama } = setupOffer;
-  const lines = parts.map((p) => `• ${p.title} — ${p.size}`);
-  const text = [
-    `Для работы мне нужно скачать компоненты — всего около ${total}:`,
-    ...lines,
-    ollama ? '' : '\nВ настройках выбран движок Ollama — его нужно установить отдельно с ollama.com (или выберите встроенный).',
-    '\nВсё работает на этом компьютере, без облака. Скачать сейчас?',
-  ].filter(Boolean);
-  showPanel(
-    text.join('\n'),
-    [
-      [
-        `Скачать (${total})`,
-        () => {
-          hidePanel();
-          setupOffer = null;
-          setupBox.classList.remove('pending');
-          window.jarvis.setupAnswer(true);
-        },
-        true,
-      ],
-      ...(ollama ? [] : [['Скачать Ollama', () => window.jarvis.openLink('https://ollama.com/download')]]),
-      [
-        'Позже',
-        () => {
-          hidePanel();
-          setupBox.hidden = false;
-          setupBox.classList.add('pending');
-          $('#setup-title').textContent = `Не установлено: ${total}. Нажмите, чтобы скачать`;
-          $('#setup-fill').style.width = '0%';
-        },
-      ],
-    ],
-    null,
-    { modal: true },
-  );
-}
-window.jarvis.onSetupOffer((offer) => {
-  installing = true;
-  setupOffer = offer;
-  setStatus('Нужно скачать компоненты', true);
-  showSetupOffer();
-});
-setupBox.addEventListener('click', () => setupOffer && showSetupOffer());
-
-// «Я могу стать умнее»: большой модели нет — скачать Qwen, подключить внешнюю (Ollama или по API) или позже
-window.jarvis.onBrainOffer(({ size }) => {
-  const text =
-    `Я могу стать умнее: для этого нужно докачать ещё ${size} — большую языковую модель Qwen. ` +
-    'Вместо неё можно подключить внешнюю модель: в Ollama или стороннюю по API. ' +
-    'А после установки Qwen я по вашему желанию могу комбинировать локальную и удалённую модели.';
-  const answer = (choice) => () => {
-    hidePanel();
-    window.jarvis.brainAnswer(choice);
-    if (choice === 'connect') window.jarvis.openSettings('models');
-  };
-  showPanel(text, [
-    [`Скачать (${size})`, answer('download'), true],
-    ['Подключить внешнюю', answer('connect')],
-    ['Позже', answer('later')],
-    ['Не предлагать', answer('never')],
-  ]);
-  if (voiceOn && !busy && !speaking) speak(text);
-});
-
-// Загрузка обновления: та же полоска, что и при установке
-window.jarvis.onUpdate((r) => {
-  setupBox.hidden = false;
-  setupBox.classList.remove('pending');
-  setupBox.classList.toggle('error', !!r.error);
-  $('#setup-title').textContent = r.progress != null && !r.done && !r.error ? `${r.title} — ${Math.round(r.progress * 100)}%` : r.title;
-  $('#setup-fill').style.width = `${Math.round((r.progress ?? 0) * 100)}%`;
-  if (r.done || r.error) setTimeout(() => !installing && (setupBox.hidden = true), 6000);
-});
-
-applySettings();

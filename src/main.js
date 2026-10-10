@@ -10,6 +10,8 @@
 //   app/updates.js     — обновления отдельно скачанных частей: llama.cpp, быстрая модель, речь, голос, MCP
 //   app/radio-player.js — мини-плеер радио в углу экрана
 //   app/lifecycle.js   — запуск, трей, обновления, выход
+//   app/crash-guard.js — ошибки и падения окон: в журнал, окно перезагрузить
+//   app/backup.js      — резервная копия настроек, памяти и голосов одним файлом
 const electron = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -29,6 +31,8 @@ const { createModelManager } = require('./app/models');
 const { createUpdatesManager } = require('./app/updates');
 const { createRadioPlayer } = require('./app/radio-player');
 const { createSecrets } = require('./core/secrets');
+const { createCrashGuard } = require('./app/crash-guard');
+const { registerBackupIpc } = require('./app/backup');
 const pkg = require('../package.json');
 
 const { app, globalShortcut } = electron;
@@ -67,6 +71,7 @@ const ipc = createIpc(ui, settingsWindow);
 
 let settings = null; // создаются ниже; навыки сохраняют настройки уже после запуска
 const services = createServices({ config, dataDir, modelsDir, ui, electron, saveSettings: (patch) => settings.saveAndShare(patch) });
+createCrashGuard({ app, audit: services.audit });
 const voice = createVoice({ app, config, modelsDir, dataDir, services, ui, ipc });
 createAsk({ config, services, voice, ui, ipc });
 // Ход установки — в оба окна: полоской в разговоре и в разделе «Компоненты» настроек
@@ -111,8 +116,13 @@ const radioPlayer = createRadioPlayer({
   audit: services.audit,
 });
 ipc.add(radioPlayer);
+services.ctx.openSettings = (page) => settingsWindow.open(String(page || '')); // «открой настройки» голосом
 services.radio.setPlayer(radioPlayer);
 ipc.on('jarvis:radio-control', (msg) => radioPlayer.control(msg));
+registerBackupIpc({ ipc, app, dialog: electron.dialog, dataDir, configFile, audit: services.audit, appVersion: pkg.version });
+// Полоска «Запланировано» в окне: таймеры, напоминания, будильники — список и отмена крестиком
+ipc.handle('jarvis:schedule', () => services.schedule());
+ipc.on('jarvis:schedule-cancel', (id) => services.scheduleCancel(String(id)));
 const mcp = createMcpManager({ config, dataDir, services, settings, ipc });
 const models = createModelManager({ config, modelsDir, services, settings, ipc, dialog: electron.dialog });
 const updates = createUpdatesManager({ config, modelsDir, services, settings, ipc, voice, models, mcp });

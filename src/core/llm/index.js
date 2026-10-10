@@ -3,6 +3,7 @@
 // Выбирается при каждом запросе: смена движка в настройках действует сразу, без перезапуска.
 const { STOP } = require('./stream');
 const { BACKENDS, DEFAULT_BACKEND } = require('./backends');
+const { extractAnswer } = require('../../lib/extract-answer');
 
 // llama — сервер из core/llama.js (нужен для backend = llamacpp)
 function createLlm({ config, llama }) {
@@ -49,6 +50,11 @@ function createLlm({ config, llama }) {
   // текст из интернета может повлиять только на слова ответа, но не на действия.
   // onText(накопленный текст) — ответ по кускам, чтобы начать его озвучивать раньше
   function answer(question, context, onText) {
+    // Без большой модели — предложения из найденного, где больше всего слов вопроса (короче, но по делу)
+    if (!available()) {
+      const text = context ? extractAnswer(question, context) : '';
+      return Promise.resolve(text || 'Без большой модели ответить не могу, сэр, а в интернете ничего не нашлось.');
+    }
     const today = new Date().toLocaleDateString('ru-RU', { dateStyle: 'long' });
     const system = context
       ? `Ты ${name}, голосовой ассистент. Сегодня ${today}, найденные данные свежие. ` +

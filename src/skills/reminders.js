@@ -4,18 +4,35 @@
 // Напоминания на время хранятся в reminders.json и переживают перезапуск; пропущенные, пока приложение
 // было закрыто, звучат при старте. Таймеры «через N» живут до перезапуска.
 const { createStore } = require('../lib/store');
-const { durationFromText } = require('../lib/ru');
+const { durationFromText, plural } = require('../lib/ru');
 const { parseClock, formatClock } = require('../lib/clock');
 
 // --- таймеры «через N» ---
 
-const timers = new Set();
+// «10 минут», «час», «1 час 30 минут», «45 секунд» — для ответа голосом
+function span(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  const part = (n, one, few, many, single) => (n === 1 && single ? single : `${n} ${plural(n, one, few, many)}`);
+  const out = [];
+  if (h) out.push(part(h, 'час', 'часа', 'часов', 'час'));
+  if (m) out.push(part(m, 'минуту', 'минуты', 'минут', h ? '' : 'минуту'));
+  if (s && !h) out.push(part(s, 'секунду', 'секунды', 'секунд', m ? '' : 'секунду'));
+  return out.join(' ');
+}
+
+// id ('t1', 't2'…) → { handle, at, text }: время и подпись нужны окну (полоска «Запланировано», карточка)
+const timers = new Map();
+let timerSeq = 0;
+let onChange = () => {}; // окно узнаёт, что список запланированного изменился (init → ctx.onSchedule)
 
 function setTimer(arg, ctx) {
   if (/^\s*(cancel|отмен)/i.test(arg)) {
     const n = timers.size;
-    timers.forEach(clearTimeout);
+    timers.forEach((t) => clearTimeout(t.handle));
     timers.clear();
+    onChange();
     return { ok: true, message: n ? 'Все таймеры отменены, сэр.' : 'Активных таймеров нет, сэр.' };
   }
   // "600|текст" или просто "600"
@@ -26,14 +43,24 @@ function setTimer(arg, ctx) {
     return { ok: false, message: 'Таймер можно поставить от секунды до суток, сэр.' };
   }
   const text = (m[2] || '').trim().slice(0, 200) || 'время вышло';
-  const id = setTimeout(() => {
+  const id = `t${++timerSeq}`;
+  const handle = setTimeout(() => {
     timers.delete(id);
+    onChange();
     ctx.audit({ reminder: text });
     ctx.remind(text);
   }, seconds * 1000);
-  id.unref?.(); // приложение и так живёт в трее; без unref таймер держал бы процесс тестов
-  timers.add(id);
-  return { ok: true };
+  handle.unref?.(); // приложение и так живёт в трее; без unref таймер держал бы процесс тестов
+  const at = Date.now() + seconds * 1000;
+  timers.set(id, { handle, at, text });
+  onChange();
+  // Без текста — просто таймер («засеки 10 минут»): ответ «Засёк …»; с текстом — что и когда напомню
+  const plain = /^(время вышло|таймер)$/.test(text);
+  return {
+    ok: true,
+    speak: plain ? `Засёк ${span(seconds)}.` : `Напомню через ${span(seconds)}: ${text}.`,
+    card: { type: 'timer', id, kind: 'timer', at, label: plain ? 'Таймер' : text },
+  };
 }
 
 // --- напоминания на время и дату ---
@@ -100,7 +127,49 @@ function add(arg) {
   const id = items.reduce((m, x) => Math.max(m, x.id), 0) + 1;
   items.push({ id, ...r });
   store.save();
-  return { ok: true, speak: `Напомню ${when(r)}: ${r.text}.` };
+  onChange();
+  return { ok: true, speak: `Напомню ${when(r)}: ${r.text}.`, card: cardOf({ id, ...r }) };
+}
+
+// Карточка напоминания или будильника для окна
+const cardOf = (r) => ({
+  type: 'timer',
+  id: `r${r.id}`,
+  kind: r.alarm ? 'alarm' : 'reminder',
+  at: r.at,
+  label: r.alarm ? 'Будильник' : r.text,
+  repeat: r.every ? `каждые ${r.every} мин` : r.weekdays ? 'по будням' : r.daily ? 'каждый день' : '',
+});
+
+// Всё запланированное — для полоски «Запланировано» в окне: ближайшее сначала
+function schedule(limit = 6) {
+  const all = [...timers].map(([id, t]) => ({
+    type: 'timer',
+    id,
+    kind: 'timer',
+    at: t.at,
+    label: /^(время вышло|таймер)$/.test(t.text) ? 'Таймер' : t.text,
+  }));
+  for (const r of store.get().items) all.push(cardOf(r));
+  return all.sort((a, b) => a.at - b.at).slice(0, limit);
+}
+
+// Отменить одно по id из schedule(): 't3' — таймер, 'r5' — напоминание или будильник
+function cancel(id) {
+  const key = String(id);
+  if (timers.has(key)) {
+    clearTimeout(timers.get(key).handle);
+    timers.delete(key);
+    onChange();
+    return true;
+  }
+  const n = Number(key.replace(/^r/, ''));
+  const items = store.get().items;
+  const keep = items.filter((r) => r.id !== n);
+  if (keep.length === items.length) return false;
+  store.save({ items: keep });
+  onChange();
+  return true;
 }
 
 // Ближайшие напоминания (для сводки на день)
@@ -119,6 +188,7 @@ function list(arg) {
     const keep = items.filter((r) => !all && !r.text.toLowerCase().includes(what));
     const removed = items.length - keep.length;
     store.save({ items: keep });
+    if (removed) onChange();
     return removed ? { ok: true, speak: `Отменил: ${removed}.` } : { ok: false, message: 'Не нашёл такого напоминания, сэр.' };
   }
   if (!items.length) return { ok: true, speak: 'Напоминаний нет, сэр.' };
@@ -146,7 +216,10 @@ function tick(ctx) {
     else if (r.daily || r.weekdays) r.at = nextTime(r, now);
     else data.items.splice(data.items.indexOf(r), 1);
   }
-  if (changed) store.save();
+  if (changed) {
+    store.save();
+    onChange();
+  }
 }
 
 // --- будильник ---
@@ -160,6 +233,7 @@ function alarm(arg) {
   const alarms = items.filter((r) => r.alarm);
   if (/^(cancel|отмен|удал|выключ)/.test(s)) {
     store.save({ items: items.filter((r) => !r.alarm) });
+    if (alarms.length) onChange();
     return alarms.length
       ? { ok: true, speak: `Отменил ${alarms.length === 1 ? 'будильник' : 'все будильники'}, сэр.` }
       : { ok: true, speak: 'Будильников нет, сэр.' };
@@ -190,7 +264,8 @@ function alarm(arg) {
   };
   items.push(item);
   store.save();
-  return { ok: true, speak: `Будильник ${when(item)}${radio ? `, разбужу радио ${radio}` : ''}.` };
+  onChange();
+  return { ok: true, speak: `Будильник ${when(item)}${radio ? `, разбужу радио ${radio}` : ''}.`, card: cardOf(item) };
 }
 
 // «Разбуди меня в семь», «будильник на шесть сорок пять по будням», «разбуди в семь под радио Маяк»,
@@ -320,6 +395,7 @@ module.exports = {
   ],
   init(ctx) {
     store = createStore(ctx.dataDir, 'reminders.json', { items: [] });
+    onChange = () => ctx.onSchedule?.();
     clearInterval(ticker);
     if (!ctx.dataDir) return; // в тестах не тикаем
     ticker = setInterval(() => tick(ctx), CHECK_MS);
@@ -330,6 +406,9 @@ module.exports = {
   upcoming,
   when,
   pending: () => timers.size,
+  span,
+  schedule,
+  cancel,
   _reset: () => (store = createStore(null, '', { items: [] })),
   _tick: (ctx) => tick(ctx),
 };

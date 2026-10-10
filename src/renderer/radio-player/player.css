@@ -1,10 +1,11 @@
-/* Мини-плеер радио: одна строка — «волна», станция и песня, кнопки. Окно перетаскивается за любое место,
-   кроме кнопок и громкости; токены — общие (shared/theme.css). */
+/* Мини-плеер радио — капсула в стиле всплывашки Ориона: диск с «волной», станция и песня, кнопки.
+   Окно прозрачное, капсула — с полями под тень. Перетаскивается за любое место, кроме кнопок и громкости;
+   токены — общие (shared/theme.css). */
 @import url('../shared/theme.css');
 
 html,
 body {
-  background: var(--bg);
+  background: transparent;
 }
 
 .sprite {
@@ -12,24 +13,40 @@ body {
 }
 
 .player {
-  height: 100vh;
+  position: absolute;
+  inset: 6px 6px 8px;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 8px 0 14px;
+  padding: 0 8px 0 6px;
   border: 1px solid var(--line-strong);
-  border-radius: var(--r-window);
-  background: linear-gradient(180deg, var(--bg-2), var(--bg));
+  border-radius: 26px;
+  background:
+    radial-gradient(120% 140% at 0% 50%, rgba(95, 210, 255, 0.1), transparent 55%),
+    linear-gradient(180deg, rgba(14, 26, 37, 0.97), rgba(6, 11, 16, 0.97));
+  box-shadow:
+    0 3px 6px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(166, 236, 255, 0.08);
   -webkit-app-region: drag;
 }
 
-/* Четыре столбика: играет — пляшут, пауза — замерли */
+/* Диск слева (на месте реактора у капсулы Ориона) и в нём четыре столбика: играет — пляшут, пауза — замерли */
 .wave {
   display: flex;
   align-items: flex-end;
+  justify-content: center;
   gap: 2px;
-  height: 18px;
+  width: 38px;
+  height: 38px;
+  padding: 10px 0;
   flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: radial-gradient(circle, rgba(95, 210, 255, 0.16), rgba(0, 0, 0, 0.25) 70%);
+}
+.player.playing .wave {
+  border-color: var(--accent-dim);
+  box-shadow: 0 0 10px rgba(95, 210, 255, 0.25);
 }
 .wave i {
   width: 3px;
@@ -99,11 +116,11 @@ body {
   -webkit-app-region: no-drag;
 }
 .controls button {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   display: grid;
   place-items: center;
-  border-radius: var(--r);
+  border-radius: 50%;
   color: var(--text-2);
 }
 .controls button:hover {

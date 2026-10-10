@@ -29,6 +29,7 @@ if (!system.real) {
     pressMediaKey: record('pressMediaKey'),
     listWindowedApps: record('listWindowedApps', []),
     closeProcessWindows: record('closeProcessWindows', 0),
+    closeForegroundWindow: record('closeForegroundWindow', 'notepad'),
     minimizeAll: record('minimizeAll'),
     pasteClipboard: record('pasteClipboard'),
   });

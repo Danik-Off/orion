@@ -62,7 +62,8 @@ function createRadioPlayer({ preload, html, config, radio, saveSettings, audit =
       skipTaskbar: true,
       focusable: false, // не перехватывать ввод у окна, в котором человек работает
       show: false,
-      backgroundColor: '#05090d',
+      transparent: true, // плеер — капсула со скруглёнными краями, как всплывашка Ориона
+      backgroundColor: '#00000000',
       webPreferences: { preload, contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, spellcheck: false },
     });
     win.setAlwaysOnTop(true, 'floating');

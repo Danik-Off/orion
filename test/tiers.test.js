@@ -238,7 +238,9 @@ test('без большой модели: быстрые команды рабо
   assert.ok(r.actions.length > 0);
   r = await assistant.handle('расскажи про чёрные дыры', { source: 'text' });
   await assistant.reset();
-  assert.equal(r.say, NO_BRAIN.replace(', сэр', ''), 'гостю — без обращения');
+  // Объяснение и примеры того, что получится без модели
+  assert.ok(r.say.startsWith(NO_BRAIN.replace(', сэр', '')), 'гостю — без обращения');
+  assert.match(r.say, /Например: «[^»]+»/);
   assert.equal(calls.length, 0, 'к отсутствующей модели не обращаемся');
   assert.ok(log.some((e) => e.brain === 'нет большой модели'));
 

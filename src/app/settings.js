@@ -72,6 +72,7 @@ function createSettingsIpc({
       tts: speech.tts,
       listenOnStart: config.speech.listenOnStart !== false,
       followUpSeconds: config.speech.followUpSeconds,
+      night: config.speech.night || null,
       echoCancellation: config.speech.echoCancellation !== false,
       speaker: await voice.peopleInfo(),
       mode: ui.mode(),

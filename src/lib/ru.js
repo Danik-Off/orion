@@ -54,20 +54,52 @@ const NUM_WORDS = {
   сто: 100,
   двести: 200,
   триста: 300,
+  четыреста: 400,
+  пятьсот: 500,
+  шестьсот: 600,
+  семьсот: 700,
+  восемьсот: 800,
+  девятьсот: 900,
   полчаса: 30,
+  // Родительный падеж: «от двух тысяч», «из пяти»
+  двух: 2,
+  трех: 3,
+  четырех: 4,
+  пяти: 5,
+  шести: 6,
+  семи: 7,
+  восьми: 8,
+  девяти: 9,
+  десяти: 10,
+  двадцати: 20,
+  тридцати: 30,
+  сорока: 40,
+  пятидесяти: 50,
+  ста: 100,
+  двухсот: 200,
 };
+// Множители: «две тысячи» — 2 × 1000, а не 2 + 1000
+const SCALE = [
+  [/^тысяч/, 1000],
+  [/^миллион/, 1_000_000],
+];
 function wordsToNumber(text) {
   const digits = String(text).match(/\d+/);
   if (digits) return Number(digits[0]);
-  let sum = null;
+  let sum = null; // готовые тысячи, миллионы
+  let part = null; // число до следующего множителя
   for (const w of String(text)
     .toLowerCase()
     .replace(/ё/g, 'е')
     .split(/[^а-я]+/)) {
-    if (w in NUM_WORDS) sum = (sum || 0) + NUM_WORDS[w];
-    else if (sum !== null) break; // число закончилось
+    const scale = SCALE.find(([re]) => re.test(w))?.[1];
+    if (w in NUM_WORDS) part = (part || 0) + NUM_WORDS[w];
+    else if (scale) {
+      sum = (sum || 0) + (part ?? 1) * scale;
+      part = null;
+    } else if (sum !== null || part !== null) break; // число закончилось
   }
-  return sum;
+  return sum === null && part === null ? null : (sum || 0) + (part || 0);
 }
 
 // Длительность из фразы в секундах: «через 10 минут», «на полчаса», «через час», «полтора часа», «5 секунд».

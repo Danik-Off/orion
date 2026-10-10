@@ -305,7 +305,7 @@ body {
   position: absolute;
   inset: 0;
   border: 1px solid var(--line-strong);
-  border-radius: var(--r);
+  border-radius: 10px;
   background: var(--well);
   transition:
     background 0.15s,
@@ -319,9 +319,10 @@ body {
   left: 3px;
   width: 12px;
   height: 12px;
+  border-radius: 50%;
   background: var(--muted);
   transition:
-    transform 0.15s,
+    transform 0.2s cubic-bezier(0.34, 1.4, 0.64, 1),
     background 0.15s;
 }
 .toggle input:checked + span {
@@ -342,14 +343,16 @@ body {
 input[type='range'] {
   width: 180px;
   appearance: none;
-  height: 3px;
+  height: 4px;
+  border-radius: 2px;
   background: var(--well);
   outline: none;
 }
 input[type='range']::-webkit-slider-thumb {
   appearance: none;
-  width: 12px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 8px var(--accent);
   cursor: pointer;
@@ -502,4 +505,19 @@ input[type='range']::-webkit-slider-thumb {
 /* Отступ между блоками раздела со своей отрисовкой (как у соседних секций) */
 .section-gap {
   margin-top: 22px;
+}
+
+/* Резервная копия: две кнопки и итог рядом */
+.backup-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 340px;
+}
+.backup-row .row-hint {
+  flex-basis: 100%;
+  text-align: right;
+  overflow-wrap: anywhere;
 }

@@ -24,6 +24,7 @@
     "screenshots": "electron scripts/screenshots.js",
     "dist": "npm run icon && node scripts/build-info.js && electron-builder --publish never",
     "dist:dir": "npm run icon && node scripts/build-info.js && electron-builder --dir --publish never",
+    "endpoint-check": "node scripts/endpoint-check.js",
     "voice-check": "node scripts/voice-check.js",
     "stress-eva": "node scripts/stress-eval.js",
     "stress-phrases": "node scripts/stress-phrases.js",

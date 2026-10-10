@@ -28,5 +28,17 @@ export default {
         toggle('speech.stress', 'Правильные ударения', { hint: '«Замок на двери», «всё готово».', keywords: 'ударение произношение' }),
       ],
     },
+    {
+      title: 'Ночью',
+      rows: [
+        toggle('speech.night.enabled', 'Говорить тише ночью', {
+          hint: 'Голос и сигнал «слушаю» тише в эти часы. Будильник звенит как обычно.',
+          keywords: 'ночь ночной режим тихо громкость шёпот',
+        }),
+        range('speech.night.from', 'С', { min: 0, max: 23, step: 1, format: (v) => `${v}:00` }),
+        range('speech.night.to', 'До', { min: 0, max: 23, step: 1, format: (v) => `${v}:00` }),
+        range('speech.night.volume', 'Громкость ночью', { min: 0.1, max: 1, step: 0.05, format: (v) => `${Math.round(v * 100)}%` }),
+      ],
+    },
   ],
 };

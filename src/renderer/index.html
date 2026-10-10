@@ -21,6 +21,19 @@
       <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-3 4h10l-3-4V3M12 13v8" /></symbol>
       <symbol id="i-owner" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></symbol>
       <symbol id="i-send" viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6" /></symbol>
+      <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2" /><circle cx="12" cy="12" r="1.2" /><circle cx="19" cy="12" r="1.2" /></symbol>
+      <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2.5 2.5M9 2h6" /></symbol>
+      <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4l2-2zM10 21h4" /></symbol>
+      <symbol id="i-alarm" viewBox="0 0 24 24"><circle cx="12" cy="13" r="7.5" /><path d="M12 9.5V13l2.5 1.5M4 5l3-2.5M20 5l-3-2.5" /></symbol>
+      <symbol id="i-expand" viewBox="0 0 24 24"><path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7" /></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></symbol>
+      <symbol id="i-w-clear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5" /><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8" /></symbol>
+      <symbol id="i-w-partly" viewBox="0 0 24 24"><path d="M8 4.5V3M3.5 9H2M4.6 5.6 3.5 4.5M12.4 5.6l1.1-1.1" /><path d="M5.2 11.5A4 4 0 1 1 12 7.6" /><path d="M8 20h9.5a3.5 3.5 0 0 0 .3-7A5 5 0 0 0 8.4 13.6 3.2 3.2 0 0 0 8 20z" /></symbol>
+      <symbol id="i-w-cloud" viewBox="0 0 24 24"><path d="M7 19h10.5a4 4 0 0 0 .4-8A6 6 0 0 0 6.6 12.2 3.4 3.4 0 0 0 7 19z" /></symbol>
+      <symbol id="i-w-fog" viewBox="0 0 24 24"><path d="M7 13h10.5a3.5 3.5 0 0 0 .3-7A5.5 5.5 0 0 0 7.5 7.2 3 3 0 0 0 7 13zM4 17h16M6 21h12" /></symbol>
+      <symbol id="i-w-rain" viewBox="0 0 24 24"><path d="M7 15h10.5a3.5 3.5 0 0 0 .3-7A5.5 5.5 0 0 0 7.5 9.2 3 3 0 0 0 7 15zM8 18l-1 3M12 18l-1 3M16 18l-1 3" /></symbol>
+      <symbol id="i-w-snow" viewBox="0 0 24 24"><path d="M7 14h10.5a3.5 3.5 0 0 0 .3-7A5.5 5.5 0 0 0 7.5 8.2 3 3 0 0 0 7 14z" /><path d="M8 18v.01M12 20v.01M16 18v.01M10 22v.01M14 22v.01" stroke-width="2.4" /></symbol>
+      <symbol id="i-w-storm" viewBox="0 0 24 24"><path d="M7 14h10.5a3.5 3.5 0 0 0 .3-7A5.5 5.5 0 0 0 7.5 8.2 3 3 0 0 0 7 14zM12.5 15l-2 3.5h3l-2 3.5" /></symbol>
       <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" /></symbol>
     </svg>
 
@@ -28,28 +41,31 @@
       <header class="bar">
         <div class="drag">
           <span class="logo" aria-hidden="true"></span>
-          <div class="title">
-            <span id="name">Орион</span>
-            <span id="model" class="sub"></span>
-          </div>
+          <span id="name">Орион</span>
         </div>
         <div class="tools">
           <button id="mic" class="icon" title="Микрофон" aria-pressed="false" hidden>
             <svg><use href="#i-mic-off" /></svg>
           </button>
-          <button id="owner" class="icon" title="Люди и голоса" hidden>
-            <svg><use href="#i-owner" /></svg>
-          </button>
           <button id="voice" class="icon on" title="Озвучка ответов" aria-pressed="true">
             <svg><use href="#i-sound" /></svg>
           </button>
-          <button id="reset" class="icon" title="Новый разговор"><svg><use href="#i-new" /></svg></button>
           <button id="settings-btn" class="icon" title="Настройки"><svg><use href="#i-gear" /></svg></button>
-          <button id="pin" class="icon" title="Поверх остальных окон" aria-pressed="false"><svg><use href="#i-pin" /></svg></button>
+          <button id="more" class="icon" title="Ещё" aria-haspopup="menu" aria-expanded="false"><svg><use href="#i-more" /></svg></button>
+          <span class="tools-gap" aria-hidden="true"></span>
           <button id="minimize" class="icon" title="Свернуть"><svg><use href="#i-min" /></svg></button>
           <button id="hide" class="icon" title="Скрыть в трей (Esc)"><svg><use href="#i-hide" /></svg></button>
         </div>
       </header>
+
+      <!-- Редкие действия — в меню «⋯», чтобы шапка не была рядом из восьми одинаковых значков -->
+      <div id="menu" class="menu" role="menu" hidden>
+        <button id="reset" class="menu-item" role="menuitem"><svg><use href="#i-new" /></svg>Новый разговор</button>
+        <button id="owner" class="menu-item" role="menuitem" hidden><svg><use href="#i-owner" /></svg>Люди и голоса</button>
+        <button id="pin" class="menu-item" role="menuitemcheckbox" aria-pressed="false">
+          <svg><use href="#i-pin" /></svg>Поверх остальных окон<svg class="check"><use href="#i-check" /></svg>
+        </button>
+      </div>
 
 
 
@@ -60,26 +76,29 @@
           <span class="ring r3"></span>
           <span class="sweep"></span>
           <span class="dot"></span>
+          <span class="follow"></span>
         </button>
         <div class="captions">
           <div id="status" class="status"></div>
           <div id="caption" class="caption"></div>
+          <!-- Только в капсуле (capsule.js): «Открыть полностью», карточки ответа и «Да / Нет» -->
+          <button id="cap-more" class="cap-more" type="button">Открыть полностью</button>
+          <div id="orb-extra" class="orb-extra"></div>
           <div id="setup" class="setup" hidden>
             <div id="setup-title" class="setup-title"></div>
             <div class="setup-bar"><span id="setup-fill"></span></div>
           </div>
         </div>
+        <div class="cap-tools">
+          <button id="cap-open" type="button" title="Развернуть окно"><svg><use href="#i-expand" /></svg></button>
+          <button id="cap-close" type="button" title="Закрыть (Esc)"><svg><use href="#i-hide" /></svg></button>
+        </div>
       </section>
 
       <section id="log" class="log" aria-live="polite"></section>
 
-      <div id="hints" class="hints">
-        <button class="chip">Какая погода?</button>
-        <button class="chip">Почём доллар?</button>
-        <button class="chip">Включи музыку</button>
-        <button class="chip">Открой Telegram</button>
-        <button class="chip">Напомни через 10 минут размяться</button>
-      </div>
+      <!-- Подсказки по времени суток — app.js (hintsFor в commands.js) -->
+      <div id="hints" class="hints"></div>
 
       <div id="backdrop" class="backdrop" hidden></div>
       <div id="panel" class="panel" hidden>
@@ -100,6 +119,8 @@
         <button id="confirm-no" class="btn">Нет</button>
       </div>
 
+      <div id="schedule" class="schedule" aria-label="Запланировано" hidden></div>
+
       <form id="form" class="composer">
         <input id="input" autocomplete="off" maxlength="1000" placeholder="Напишите или скажите «Орион…»" />
         <button class="send" title="Отправить"><svg><use href="#i-send" /></svg></button>
@@ -108,8 +129,14 @@
 
     <script src="voice.js"></script>
     <script src="commands.js"></script>
+    <script src="noise.js"></script>
     <script src="radio.js"></script>
     <script src="alarm.js"></script>
+    <script src="cards.js"></script>
+    <script src="capsule.js"></script>
     <script src="app.js"></script>
+    <script src="panel.js"></script>
+    <script src="people.js"></script>
+    <script src="setup-ui.js"></script>
   </body>
 </html>

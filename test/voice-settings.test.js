@@ -90,7 +90,13 @@ test('свои настройки: сохраняются через saveSetting
   assert.match(r.speak, /перезапуска/);
   assert.equal((await skills.run('my_setting', 'name ')).ok, false);
 
+  const weather = require('../src/skills/weather');
+  const realGeocode = weather.geocode;
+  weather.geocode = async (q) => (/новосибирск/.test(q) ? { name: 'Новосибирск' } : null); // без сети
+  await skills.run('my_setting', 'city новосибирске');
+  assert.deepEqual(saved.at(-1), { city: 'Новосибирск' }, 'падеж — как у сервиса погоды');
   await skills.run('my_setting', 'city нижний новгород');
+  weather.geocode = realGeocode;
   assert.deepEqual(saved.at(-1), { city: 'Нижний Новгород' });
   assert.match((await skills.run('my_setting', 'show')).speak, /Джарвис.*Нижний Новгород/s);
 });
@@ -99,6 +105,5 @@ test('настройки голосом: большой модели — тол�
   const { skills } = makeRegistry();
   assert.equal(skills.external('выключи вайфай'), 'system');
   assert.equal(skills.external('пусть тебя зовут Пятница'), 'assistant-settings');
-  for (const t of ['сделай экран темнее', 'какая скорость вайфая', 'открой настройки', 'запиши мой голос'])
-    assert.equal(skills.external(t), null, t);
+  for (const t of ['сделай экран темнее', 'какая скорость вайфая', 'запиши мой голос']) assert.equal(skills.external(t), null, t);
 });

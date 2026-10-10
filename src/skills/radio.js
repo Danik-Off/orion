@@ -50,7 +50,8 @@ function playerPlace(t) {
 function quick(text, ctx) {
   const t = norm(text);
   const plan = (tool, arg) => ({ addressed: true, say: '', actions: [{ tool, arg }] });
-  if (/^(выключи|останови|убери|хватит) радио$|^радио (выключи|стоп)$/.test(t)) return plan('radio_stop', '');
+  if (/^(выключи|выруби|отключи|останови|убери|хватит) (?:это |мне )?радио$|^радио (выключи|выруби|стоп|хватит)$/.test(t))
+    return plan('radio_stop', '');
   // Мини-плеер: «перенеси радио в правый верхний угол», «спрячь плеер» — раньше «поставь радио …», иначе угол стал бы станцией
   const where = playerPlace(t);
   if (where) return plan('radio_player', where);

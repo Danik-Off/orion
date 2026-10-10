@@ -474,3 +474,29 @@ test('router: N — навык, выученный маленькой модел
   assert.equal(make({ release: 'models-router-v2' }).external('запусти зонд'), null);
   assert.equal(make({ version: 3 }).external('запусти зонд'), null);
 });
+
+test('owns: фраза по первым словам — своему инструменту, что бы ни решила маленькая модель', () => {
+  const { skills } = makeRegistry();
+  assert.deepEqual(skills.owner('Напечатай привет, буду через 10 минут'), { skill: 'text', tool: 'type_text' });
+  assert.equal(skills.owner('напомни через 10 минут'), null);
+  assert.equal(skills.owner(''), null);
+});
+
+test('искажённое название программы: переспросить похожее, а не сразу «не нашёл»', async () => {
+  const { nearest } = require('../src/lib/app-catalog');
+  const names = ['Word', 'Zoom', 'Steam', 'Telegram Desktop', 'Проводник', 'Блокнот'];
+  assert.equal(nearest('ворт', names), 'Word');
+  assert.equal(nearest('блокнод', names), 'Блокнот');
+  assert.equal(nearest('сасфекс', names), null, 'ничего похожего — не выдумывать');
+  assert.equal(nearest('ы', names), null);
+
+  const { skills, ctx } = makeRegistry({ apps: { Word: 'winword.exe' }, discoverApps: false });
+  await skills.init();
+  const asked = [];
+  ctx.confirm = async (q) => (asked.push(q), false);
+  const r = await skills.run('open_app', 'ворт');
+  assert.deepEqual(asked, ['Вы имели в виду «Word»?']);
+  assert.equal(r.ok, false);
+  ctx.confirm = async () => true;
+  assert.equal((await skills.run('open_app', 'ворт')).ok, true, 'согласился — открыть');
+});
