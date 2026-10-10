@@ -1,7 +1,7 @@
-// Логика окна, вынесенная в чистые функции (src/renderer/commands.js): проверяется без браузера
+// Логика окна, вынесенная в чистые функции (src/ui/src/lib): проверяется без браузера — Node читает .ts сам
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { isStopForOrion, isContinuation, CONTINUE_WITHIN_MS } = require('../src/renderer/commands');
+const { isStopForOrion, isContinuation, CONTINUE_WITHIN_MS } = require('../src/ui/src/lib/commands.ts');
 
 test('«Орион, стоп»: прерывает ответ, раздумье и ожидание продолжения — и перестаёт слушать', () => {
   // говорит или думает — только по имени (посреди ответа слышно лишь имя: иначе его же голос остановил бы его)
@@ -36,7 +36,7 @@ test('пока модель думает: договаривание — тол�
   assert.equal(isContinuation({ askedAt: at, startedAt: at + 100 }), true, 'ещё ничего не распознано — пока считаем дополнением');
 });
 
-const { confirmAnswer, isInterjection, speakerOf, isStrangerVoice } = require('../src/renderer/commands');
+const { confirmAnswer, isInterjection, speakerOf, isStrangerVoice } = require('../src/ui/src/lib/commands.ts');
 
 test('«да» или «нет» на подтверждение — в начале или в конце фразы, со знаками и заглавными', () => {
   assert.equal(confirmAnswer('да'), true);
@@ -76,7 +76,7 @@ test('голос: кто говорит и чужой ли он', () => {
   assert.equal(isStrangerVoice({ voice: guest, source: 'followup', talkingTo: 'anna', voices: { people: [], require: 'always' } }), false);
 });
 
-const { mediaCommand } = require('../src/renderer/commands');
+const { mediaCommand } = require('../src/ui/src/lib/commands.ts');
 
 test('пока играет радио: короткие команды без имени, разговор в комнате — нет', () => {
   assert.equal(mediaCommand('стоп'), 'stop');
@@ -91,7 +91,7 @@ test('пока играет радио: короткие команды без �
     assert.equal(mediaCommand(t), null, t);
 });
 
-const { nightLevel } = require('../src/renderer/commands');
+const { nightLevel } = require('../src/ui/src/lib/commands.ts');
 
 test('ночной режим: тише только в заданные часы, через полночь тоже', () => {
   const night = { enabled: true, from: 23, to: 7, volume: 0.4 };
@@ -104,7 +104,7 @@ test('ночной режим: тише только в заданные час�
   assert.equal(nightLevel(null, 3), 1);
 });
 
-const { lingerMs, tailText } = require('../src/renderer/capsule');
+const { lingerMs, tailText } = require('../src/ui/src/lib/format.ts');
 
 test('капсула: висит дольше для длинного ответа, распознаваемое — с конца', () => {
   assert.equal(lingerMs(''), 4000);

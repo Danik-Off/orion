@@ -11,13 +11,13 @@ const { catalogForWindow } = require('../src/core/mcp-catalog');
 
 const root = path.join(__dirname, '..');
 const out = path.join(root, 'docs', 'screenshots');
-// --orb-states <папка> — куда сложить кадры всех состояний капсулы
+// --orb-states <папка> — куда сложить кадры всех состояний голограммы
 const orbOut = process.argv.includes('--orb-states')
   ? path.resolve(process.argv[process.argv.indexOf('--orb-states') + 1] || os.tmpdir())
   : out;
 const SCALE = 2; // чёткие картинки на экранах с высокой плотностью
 const FULL = { width: 400, height: 620 };
-const ORB = { width: 400, height: 300 }; // окно капсулы; капсула прижата к его низу
+const ORB = { width: 440, height: 420 }; // окно голограммы; панель прижата к его низу
 const SETTINGS = { width: 860, height: 620 };
 
 app.commandLine.appendSwitch('force-device-scale-factor', '1'); // размер картинок не зависит от масштаба экрана
@@ -263,14 +263,13 @@ const data = {
 };
 ipcMain.on('demo:data', (e) => (e.returnValue = data));
 
-// Общее начало каждой сцены: чистое окно, микрофон включён, человек записан
+// Каждая сцена окна разговора начинается с чистого экрана: состояние контроллера (window.__orion) задаётся целиком
 const BASE = `
-  clearLog(); caption.textContent = ''; hidePanel(); document.querySelector('#confirm').hidden = true;
-  wizard = null;
-  micBtn.hidden = false; micBtn.classList.add('on'); micBtn.querySelector('use').setAttribute('href', '#i-mic');
-  peopleBtn.hidden = false; peopleBtn.classList.add('on');
-  mode = 'full'; document.body.className = 'mode-full';
-  core.dataset.state = 'idle'; showSchedule([]);
+  const o = window.__orion;
+  const msg = (kind, text, cards, who) => ({ id: Math.random(), kind, text, cards, who });
+  o.debugSet({ mode: 'full', core: 'idle', micOn: true, stt: true, peopleAvailable: true, hasPeople: true, voiceOn: true,
+    messages: [], showHints: true, panel: null, confirm: null, alarm: null, holoCards: null, caption: '', status: '',
+    statusHint: false, schedule: [], follow: null, holo: 'open', setup: null });
 `;
 // Карточки — как их отдают навыки погоды и напоминаний
 const WEATHER_CARD = {
@@ -285,47 +284,40 @@ const WEATHER_CARD = {
   ],
 };
 const timerCard = (min, label) => ({ type: 'timer', id: 't1', kind: 'timer', at: Date.now() + min * 60_000 - 18_000, label });
-const talk = (pairs) =>
-  pairs.map(([user, bot]) => `addMsg('user', ${JSON.stringify(user)}); addMsg('bot', ${JSON.stringify(bot)});`).join('\n');
+const ALARM = { type: 'timer', id: 'r2', kind: 'alarm', at: Date.parse('2026-10-12T07:00:00'), label: 'Будильник', repeat: 'по будням' };
+const J = JSON.stringify;
 
 const SCENES = [
   {
     file: '01-start.png',
     size: FULL,
-    script: `${BASE} setStatus('Скажите «Орион…» или нажмите Ctrl+Alt+J', true);`,
+    script: `${BASE} o.debugSet({ status: 'Скажите «Орион…» или нажмите Ctrl + Alt + J', statusHint: true, schedule: [${J(ALARM)}] });`,
   },
   {
     file: '02-conversation.png',
     size: FULL,
     script: `${BASE}
-      addMsg('user', 'Какая погода?');
-      addMsg('bot', 'Сейчас в Москве плюс одиннадцать, в основном ясно. Днём до плюс шестнадцати.', null, [${JSON.stringify(WEATHER_CARD)}]);
-      addMsg('user', 'Напомни через десять минут выключить чайник');
-      addMsg('bot', 'Напомню через десять минут, мисс.', null, [${JSON.stringify(timerCard(10, 'выключить чайник'))}]);
-      showSchedule([${JSON.stringify(timerCard(10, 'выключить чайник'))}, { type: 'timer', id: 'r2', kind: 'alarm', at: Date.parse('2026-10-11T07:00:00'), label: 'Будильник', repeat: 'по будням' }]);
-      setStatus(''); caption.textContent = 'Напомню через десять минут, мисс.'; core.dataset.state = 'speaking';`,
+      o.debugSet({ core: 'speaking', caption: 'Напомню через десять минут, мисс.', messages: [
+        msg('user', 'Какая погода?'),
+        msg('bot', 'Сейчас в Москве плюс одиннадцать, в основном ясно. Днём до плюс шестнадцати.', [${J(WEATHER_CARD)}]),
+        msg('user', 'Напомни через десять минут выключить чайник'),
+        msg('bot', 'Напомню через десять минут: выключить чайник.', [${J(timerCard(10, 'выключить чайник'))}]),
+      ], schedule: [${J(timerCard(10, 'выключить чайник'))}, ${J(ALARM)}] });`,
   },
   {
     file: '03-confirm.png',
     size: FULL,
     script: `${BASE}
-      ${talk([['Включи что-нибудь спокойное', 'Включаю спокойную музыку, мисс.']])}
-      addMsg('user', 'Выключи компьютер через минуту');
-      setStatus(''); caption.textContent = '';
-      document.querySelector('#confirm-text').textContent = 'Выключить компьютер через минуту?';
-      document.querySelector('#confirm').hidden = false; core.dataset.state = 'listening';`,
+      o.debugSet({ core: 'ask', caption: 'Выключить компьютер через минуту?', confirm: { text: 'Выключить компьютер через минуту?' }, messages: [
+        msg('user', 'Включи что-нибудь спокойное'), msg('bot', 'Включаю спокойную музыку, мисс.'), msg('user', 'Выключи компьютер через минуту'),
+      ] });`,
   },
   {
     file: '04-voice.png',
     size: FULL,
     script: `${BASE}
-      hints.hidden = true;
-      wizard = { stage: 'phrases', step: 0, needed: 4, heard: [], phrases: [
-        'Орион, какая сегодня погода и что у меня в планах?',
-        'Орион, включи, пожалуйста, какую-нибудь спокойную музыку.',
-        'Орион, напомни мне через десять минут проверить почту.',
-        'Орион, расскажи что-нибудь интересное про космос.'] };
-      promptPhrase(); core.dataset.state = 'listening'; setStatus('');`,
+      o.debugSet({ core: 'listening', showHints: false, panel: { modal: false, field: null, buttons: [{ label: 'Отмена', run() {} }],
+        text: 'Фраза 1 из 4. Скажите обычным голосом:\\n«Орион, какая сегодня погода и что у меня в планах?»\\nГоворите так, как обычно обращаетесь ко мне, — с того места, где обычно сидите.' } });`,
   },
   {
     file: '05-settings.png',
@@ -338,7 +330,7 @@ const SCENES = [
     file: '09-components.png',
     size: SETTINGS,
     page: 'settings', // раздел «Компоненты»: установленное и обновления
-    script: `location.hash = 'components'; await new Promise((r) => setTimeout(r, 300)); document.querySelector('#content').scrollTop = 400;`,
+    script: `location.hash = 'components'; await new Promise((r) => setTimeout(r, 400)); document.querySelector('.content').scrollTop = 400;`,
     wait: 800,
   },
   {
@@ -352,61 +344,66 @@ const SCENES = [
     file: '07-connections.png',
     size: SETTINGS,
     page: 'settings', // раздел «Подключения»: магазин MCP-серверов
-    script: `location.hash = 'connections'; await new Promise((r) => setTimeout(r, 300)); document.querySelector('.mcp-tools') || [...document.querySelectorAll('button')].find((b) => b.textContent.startsWith('Инструменты'))?.click();`,
+    script: `location.hash = 'connections'; await new Promise((r) => setTimeout(r, 400)); [...document.querySelectorAll('button')].find((b) => b.textContent.startsWith('Инструменты'))?.click();`,
     wait: 800,
   },
-  // Капсула в углу: кладётся на условный рабочий стол (desktop). Для README — ответ с карточкой;
+  // Голограмма в углу: кладётся на условный рабочий стол (desktop). Для README — ответ с карточкой;
   // остальные состояния — только с флагом --orb-states (проверка дизайна, в docs не попадают)
   orbScene(
     '06-corner.png',
-    `caption.textContent = 'Сейчас в Москве плюс одиннадцать, в основном ясно.'; core.dataset.state = 'speaking';
-      capsule.showCards([${JSON.stringify(WEATHER_CARD)}]);`,
+    `o.debugSet({ core: 'speaking', caption: 'Сейчас в Москве плюс одиннадцать, в основном ясно.', holoCards: [${J(WEATHER_CARD)}] });`,
   ),
   ...(process.argv.includes('--orb-states')
     ? [
-        orbScene('orb-1-listening.png', `core.dataset.state = 'listening';`),
+        orbScene('orb-1-listening.png', `o.debugSet({ core: 'listening' });`),
         orbScene(
           'orb-2-hearing.png',
-          `core.dataset.state = 'hearing'; caption.textContent = tailText('включи радио маяк и сделай чуть погромче, пожалуйста, а то ничего не слышно на кухне');`,
+          `o.debugSet({ core: 'hearing', caption: '…и сделай чуть погромче, пожалуйста, а то ничего не слышно на кухне' });`,
         ),
-        orbScene('orb-3-thinking.png', `core.dataset.state = 'thinking'; caption.textContent = 'какая погода на выходных';`),
+        orbScene('orb-3-thinking.png', `o.debugSet({ core: 'thinking', caption: 'какая погода на выходных' });`),
         orbScene(
           'orb-4-confirm.png',
-          `core.dataset.state = 'listening'; caption.textContent = 'Выключить компьютер через минуту? Скажите «да» или «нет».'; capsule.ask(() => {});`,
+          `o.debugSet({ core: 'ask', caption: 'Выключить компьютер через минуту? Скажите «да» или «нет».', confirm: { text: 'Выключить компьютер через минуту?' } });`,
         ),
         orbScene(
           'orb-5-timer.png',
-          `core.dataset.state = 'idle'; caption.textContent = 'Напомню через 10 минут: выключить чайник.'; capsule.showCards([${JSON.stringify(timerCard(10, 'выключить чайник'))}]);`,
+          `o.debugSet({ core: 'idle', caption: 'Напомню через 10 минут: выключить чайник.', holoCards: [${J(timerCard(10, 'выключить чайник'))}] });`,
         ),
-        orbScene('orb-6-follow.png', `core.dataset.state = 'listening'; core.dataset.follow = ''; caption.textContent = '';`),
+        orbScene('orb-6-follow.png', `o.debugSet({ core: 'listening', caption: 'Сейчас +11°, ясно.', follow: { key: 1, ms: 7000 } });`),
         orbScene(
           'orb-7-long.png',
-          `core.dataset.state = 'speaking'; caption.textContent = 'Гагарин — первый человек в космосе. Двенадцатого апреля тысяча девятьсот шестьдесят первого года он облетел Землю на корабле «Восток-1» за сто восемь минут и благополучно приземлился в Саратовской области. После полёта он стал всемирно известен.';`,
+          `o.debugSet({ core: 'speaking', caption: 'Гагарин — первый человек в космосе. Двенадцатого апреля тысяча девятьсот шестьдесят первого года он облетел Землю на корабле «Восток-1» за сто восемь минут и благополучно приземлился в Саратовской области. После полёта он стал всемирно известен.' });`,
         ),
+        orbScene(
+          'orb-8-error.png',
+          `o.debugSet({ core: 'error', caption: 'Нет связи с интернетом. Таймеры, будильник и громкость работают и без сети.' });`,
+        ),
+        {
+          file: 'orb-0-cube.png',
+          desktop: true,
+          size: { width: 64, height: 64 },
+          script: `${BASE} o.debugSet({ mode: 'cube', core: 'idle' });`,
+        },
         {
           file: 'orb-9-radio.png', // мини-плеер радио
           page: 'settings',
-          html: path.join(root, 'src', 'renderer', 'radio-player', 'index.html'),
+          html: path.join(root, 'src', 'ui', 'dist', 'radio-player.html'),
           desktop: true,
           size: { width: 380, height: 64 },
           script: `demo.emit('radioPlayer', { playing: true, name: 'Радио Маяк', song: 'Кино — Группа крови', volume: 0.7 });`,
         },
-        orbScene(
-          'orb-8-hover.png',
-          `core.dataset.state = 'speaking'; caption.textContent = 'Включаю «Маяк».'; document.querySelector('.cap-tools').style.opacity = 1;`,
-        ),
       ]
     : []),
 ];
 
-// Сцена капсулы: окно в режиме orb; desktop — положить кадр на рабочий стол
+// Сцена голограммы: окно в режиме orb; desktop — положить кадр на рабочий стол
 function orbScene(file, script) {
   return {
     file,
     desktop: true,
     size: ORB,
     script: `${BASE}
-      mode = 'orb'; document.body.className = 'mode-orb'; setStatus(''); capsule.clear();
+      o.debugSet({ mode: 'orb', holo: 'open' });
       ${script}`,
   };
 }
@@ -421,7 +418,7 @@ async function shootSettings(scene) {
     backgroundColor: scene.html ? '#00000000' : '#05090d',
     webPreferences: { preload: path.join(__dirname, 'screenshots-preload.js'), contextIsolation: true, sandbox: true, offscreen: true },
   });
-  await w.loadFile(scene.html || path.join(root, 'src', 'renderer', 'settings', 'index.html'));
+  await w.loadFile(scene.html || path.join(root, 'src', 'ui', 'dist', 'settings.html'));
   w.webContents.setZoomFactor(SCALE);
   await new Promise((r) => setTimeout(r, 400));
   await w.webContents.executeJavaScript(`(async () => { ${scene.script} })()`);
@@ -445,7 +442,7 @@ async function shoot(scene) {
       backgroundColor: '#00000000',
       webPreferences: { preload: path.join(__dirname, 'screenshots-preload.js'), contextIsolation: true, sandbox: true, offscreen: true },
     });
-    await win.loadFile(path.join(root, 'src', 'renderer', 'index.html'));
+    await win.loadFile(path.join(root, 'src', 'ui', 'dist', 'index.html'));
     win.webContents.setZoomFactor(SCALE);
     await new Promise((r) => setTimeout(r, 400)); // applySettings в окне
   }

@@ -78,14 +78,10 @@ test('будильник: ставится, по будням пропускае
   }
 });
 
-// Окно: подставные элементы и проигрыватель
-function fakeWindow() {
-  const el = () => {
-    const handlers = {};
-    return { hidden: true, textContent: '', addEventListener: (e, fn) => (handlers[e] = fn), click: () => handlers.click?.() };
-  };
+// Проигрыватель и сигнал будильника — подставные
+function fakeAlarmDeps() {
   const beeps = [];
-  global.playChime = (kind, volume) => beeps.push({ kind, volume });
+  const changes = [];
   const radio = {
     played: null,
     volume: 1,
@@ -100,40 +96,38 @@ function fakeWindow() {
       this.volume = v;
     },
   };
-  return { panel: el(), label: el(), snoozeButton: el(), stopButton: el(), radio, beeps };
+  return { radio, chime: (volume) => beeps.push(volume), onChange: (ringing) => changes.push(ringing), beeps, changes };
 }
 
 test('будильник в окне: звенит до «стоп»; «ещё пять минут» — отложить; радио вместо сигнала', () => {
-  const { createAlarm, snoozeMinutes } = require('../src/renderer/alarm');
-  const w = fakeWindow();
+  const { createAlarm, snoozeMinutes } = require('../src/ui/src/lib/alarm.ts');
+  const d = fakeAlarmDeps();
   const snoozed = [];
-  const alarm = createAlarm({ ...w, onSnooze: (p, m) => snoozed.push([p, m]) });
+  const alarm = createAlarm({ radio: d.radio, chime: d.chime, onChange: d.onChange, onSnooze: (p, m) => snoozed.push([p, m]) });
   try {
     alarm.ring({ id: 1, label: 'Будильник 07:00' });
-    assert.equal(w.panel.hidden, false);
-    assert.equal(w.label.textContent, '⏰ Будильник 07:00');
-    assert.equal(w.beeps[0].kind, 'alarm');
-    assert.ok(w.beeps[0].volume < 0.5, 'сначала тихо');
+    assert.deepEqual(d.changes, [true], 'окно узнаёт, что звенит, — рисует кнопки');
+    assert.equal(alarm.label(), 'Будильник 07:00');
+    assert.ok(d.beeps[0] < 0.5, 'сначала тихо');
     assert.equal(alarm.heard('какая погода'), false, 'другие фразы — не будильнику');
     assert.equal(alarm.heard('Стоп'), true);
     assert.equal(alarm.ringing(), false);
-    assert.equal(w.panel.hidden, true);
+    assert.deepEqual(d.changes, [true, false]);
 
     alarm.ring({ id: 2, label: 'Будильник 07:00', radio: 'маяк', station: { name: 'Маяк', url: 'https://x' } });
-    assert.equal(w.radio.played.name, 'Маяк', 'будит радио');
-    assert.ok(w.radio.volume < 0.5, 'радио — тоже сначала тихо');
+    assert.equal(d.radio.played.name, 'Маяк', 'будит радио');
+    assert.ok(d.radio.volume < 0.5, 'радио — тоже сначала тихо');
     assert.equal(alarm.heard('ещё пять минут'), true);
     assert.deepEqual(snoozed, [[{ id: 2, label: 'Будильник 07:00', radio: 'маяк' }, 5]]);
-    assert.ok(w.radio.stopped >= 1, 'отложили — радио смолкло');
+    assert.ok(d.radio.stopped >= 1, 'отложили — радио смолкло');
 
     assert.equal(snoozeMinutes('дай поспать'), 10);
     assert.equal(snoozeMinutes('ещё 15 минут'), 15);
     assert.equal(snoozeMinutes('отложи на полчаса'), 30);
     alarm.ring({ id: 3, label: 'Будильник' });
-    w.snoozeButton.click();
+    alarm.snooze();
     assert.equal(snoozed.at(-1)[1], 10, 'кнопка — на 10 минут');
   } finally {
     alarm.stop();
-    delete global.playChime;
   }
 });

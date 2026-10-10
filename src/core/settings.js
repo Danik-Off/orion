@@ -76,6 +76,8 @@ const FIELDS = {
   'radio.volume': { check: number(0, 1, 0.01), live: true },
   // Мини-плеер радио: показывать ли, в каком углу и на каком экране (id дисплея; нет такого — основной)
   'radio.player.show': { check: bool, live: true },
+  'ui.cube': { check: bool, live: true },
+  'ui.calm': { check: bool, live: true },
   'radio.player.corner': { check: oneOf('br', 'bl', 'tr', 'tl'), live: true },
   'radio.player.display': { check: (v) => (Number.isSafeInteger(Number(v)) ? Number(v) : undefined), live: true },
   onboarded: { check: bool, live: true }, // знакомство после установки прошло

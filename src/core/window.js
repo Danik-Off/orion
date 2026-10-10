@@ -1,14 +1,17 @@
-// Окно ассистента в трёх режимах: полное, капсула в углу (не забирает фокус и клики мимо себя) и скрытое.
+// Окно ассистента в четырёх режимах: полное, голограмма в углу (orb: не забирает фокус и клики мимо себя),
+// свёрнутый куб (cube: маленький куб в углу вместо скрытого окна, если он включён) и скрытое.
 // Полное — обычное окно: в панели задач, сворачивается, поверх остальных — только если его закрепили (pinned).
 // Плашка всегда поверх: она маленькая и появляется на время ответа.
 const { BrowserWindow, screen } = require('electron');
 
 const FULL = { width: 400, height: 620 };
-const ORB = { width: 400, height: 80 }; // капсула (до 376 px) + поля под тень и кнопки; высоту задаёт окно по капсуле
+const ORB = { width: 440, height: 120 }; // голограмма (340 px) + луч и куб; высоту задаёт окно по голограмме
+const CUBE = { width: 64, height: 64 };
 const ORB_MAX_SHARE = 0.6; // плашка с длинным текстом растёт вверх, но не выше этой доли экрана
 
 // orbOffset(workArea) — на сколько поднять плашку: в правом нижнем углу может стоять мини-плеер радио
-function createWindowManager({ title, preload, html, pinned = false, orbOffset = () => 0 }) {
+// cube() — оставлять ли куб в углу, когда окно скрыто
+function createWindowManager({ title, preload, html, pinned = false, orbOffset = () => 0, cube = () => false }) {
   let win = null;
   let mode = 'hidden';
   let fullBounds = null; // куда пользователь передвинул полное окно
@@ -48,7 +51,7 @@ function createWindowManager({ title, preload, html, pinned = false, orbOffset =
 
   // Слой окна под режим: плашка — поверх всего и без кнопки в панели задач; полное — как обычное окно
   function applyLayer(next) {
-    win.setAlwaysOnTop(next === 'orb' || pinned, 'floating');
+    win.setAlwaysOnTop(next === 'orb' || next === 'cube' || pinned, 'floating');
     win.setSkipTaskbar(next !== 'full');
     if (next !== 'orb') setPassthrough(false); // сквозные клики — только у капсулы
   }
@@ -69,9 +72,15 @@ function createWindowManager({ title, preload, html, pinned = false, orbOffset =
   // Без этого флага плашка не заменяет полное окно (оно уже на экране).
   function setMode(next, { collapse = false } = {}) {
     if (!win) return;
+    if (next === 'hidden' && cube()) next = 'cube'; // скрытое окно — куб в углу
     if (next === 'hidden') {
       win.hide();
       applyLayer('hidden');
+    } else if (next === 'cube') {
+      if (win.isMinimized()) win.restore();
+      applyLayer('cube');
+      placeCube();
+      win.showInactive();
     } else if (next === 'orb') {
       const minimized = win.isMinimized();
       if (mode === 'full' && !collapse && !minimized) return; // полное окно уже на экране
@@ -98,6 +107,12 @@ function createWindowManager({ title, preload, html, pinned = false, orbOffset =
     }
     mode = next;
     send('jarvis:mode', mode);
+  }
+
+  function placeCube() {
+    const a = area();
+    const lift = orbOffset(a);
+    win.setBounds({ ...CUBE, x: a.x + a.width - CUBE.width - 6, y: a.y + a.height - CUBE.height - 6 - lift });
   }
 
   function placeOrb() {
@@ -137,6 +152,7 @@ function createWindowManager({ title, preload, html, pinned = false, orbOffset =
     setPassthrough,
     send,
     mode: () => mode,
+    tucked: () => mode === 'hidden' || mode === 'cube', // окна разговора не видно (или виден только куб)
     pinned: () => pinned,
     setPinned,
     minimize,

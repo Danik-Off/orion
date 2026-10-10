@@ -89,7 +89,7 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
 
   // Сработавший таймер: плашка, голос и системное уведомление (на случай, если звук выключен).
   function remind(text) {
-    if (ui.mode() === 'hidden') ui.setMode('orb');
+    if (ui.tucked()) ui.setMode('orb');
     ui.send('jarvis:remind', text);
     const { Notification } = electron;
     if (Notification.isSupported()) new Notification({ title: `${config.name} — напоминание`, body: text }).show();
@@ -97,7 +97,7 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
 
   // Сказать что-то самому, без вопроса (рассказ после обновления): реплика в окне и голосом
   function say(text) {
-    if (ui.mode() === 'hidden') ui.setMode('orb');
+    if (ui.tucked()) ui.setMode('orb');
     ui.send('jarvis:announce', String(text));
   }
 

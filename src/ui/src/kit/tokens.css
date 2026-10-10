@@ -1,0 +1,115 @@
+/* «Призма» — дизайн-система Ориона: светящийся куб и прозрачная голограмма.
+   Один цвет на состояние (--holo — тройка RGB, чтобы задавать прозрачность): бирюза — готов и отвечает,
+   мята — слушает, фиолет — думает, янтарь — ждёт «да/нет» или ошибка, серый — микрофон выключен.
+   Острые углы, развёртка, мерцает рамка — не текст. Шрифты встроены (OFL): Unbounded — цифры и заголовки,
+   Manrope — текст, JetBrains Mono — метки и кнопки. */
+@import '@fontsource/unbounded/cyrillic-300.css';
+@import '@fontsource/unbounded/latin-300.css';
+@import '@fontsource/unbounded/cyrillic-500.css';
+@import '@fontsource/unbounded/latin-500.css';
+@import '@fontsource/manrope/cyrillic-400.css';
+@import '@fontsource/manrope/latin-400.css';
+@import '@fontsource/manrope/cyrillic-600.css';
+@import '@fontsource/manrope/latin-600.css';
+@import '@fontsource/manrope/cyrillic-700.css';
+@import '@fontsource/manrope/latin-700.css';
+@import '@fontsource/jetbrains-mono/cyrillic-400.css';
+@import '@fontsource/jetbrains-mono/latin-400.css';
+@import '@fontsource/jetbrains-mono/cyrillic-500.css';
+@import '@fontsource/jetbrains-mono/latin-500.css';
+
+:root {
+  --teal: 95, 255, 224;
+  --mint: 93, 255, 180;
+  --violet: 180, 140, 255;
+  --amber: 255, 180, 92;
+  --grey: 150, 175, 180;
+  --holo: var(--teal);
+
+  --bg: #03080a;
+  --glass: rgba(4, 18, 20, 0.92); /* окно и панели: почти непрозрачно — читается на любых обоях */
+  --glass-holo: rgba(6, 34, 36, 0.62); /* голограмма в углу: видно рабочий стол */
+  --text: #f1fffc;
+  --text-2: rgba(220, 255, 245, 0.85);
+  --muted: rgba(190, 235, 228, 0.6);
+  --label: #9ffff0;
+  --line: rgba(var(--holo), 0.22);
+  --line-strong: rgba(var(--holo), 0.45);
+  --danger: #ff8a8a;
+
+  --font-display: 'Unbounded', 'Segoe UI Variable Display', sans-serif;
+  --font-ui: 'Manrope', 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
+
+  --shadow-text: 0 1px 2px rgba(0, 0, 0, 0.85);
+  --lvl: 0; /* громкость голоса 0..1 — куб «дышит» (задаёт контроллер разговора) */
+
+  color-scheme: dark;
+  font-family: var(--font-ui);
+  color: var(--text);
+}
+
+/* Состояние → цвет: задаётся на любом блоке, всё внутри перекрашивается */
+.tone-teal {
+  --holo: var(--teal);
+}
+.tone-mint {
+  --holo: var(--mint);
+}
+.tone-violet {
+  --holo: var(--violet);
+}
+.tone-amber {
+  --holo: var(--amber);
+}
+.tone-grey {
+  --holo: var(--grey);
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+body {
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 1px solid rgb(var(--holo));
+  outline-offset: 2px;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(var(--holo), 0.25);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Спокойный режим и системное «меньше движения»: без мерцания, развёртки и пульса */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --calm: 1;
+  }
+}

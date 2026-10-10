@@ -64,6 +64,9 @@ const DEFAULTS = {
   // Ставятся из каталога в настройках («Подключения») или вручную; trust: true — действия без вопроса
   mcp: { servers: {} },
   hotkey: 'CommandOrControl+Alt+J',
+  // Вид: cube — когда окно скрыто, в углу остаётся маленький светящийся куб (щелчок открывает окно);
+  // calm — спокойный режим: без мерцания, развёртки и быстрого вращения (чувствительные глаза, слабый компьютер)
+  ui: { cube: true, calm: false },
   speech: {
     modelsDir: '',
     asrModel: 'sherpa-onnx-streaming-zipformer-small-ru-vosk-int8-2025-08-16', // быстрый: текст на лету и имя

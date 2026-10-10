@@ -97,7 +97,7 @@ function createVoice({ app, config, modelsDir, dataDir, services, ui, ipc }) {
 
   // Имя услышано: плашка появляется сразу (ошибка дешёвая — сама спрячется), большая модель — загружается
   function onName() {
-    if (ui.mode() === 'hidden') ui.setMode('orb');
+    if (ui.tucked()) ui.setMode('orb');
   }
 
   // Микрофон: куски по 100 мс (16 кГц) → VAD → распознавание → ключевое слово и голос → окно.

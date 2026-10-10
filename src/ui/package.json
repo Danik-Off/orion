@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "type": "module",
+  "description": "Интерфейс Ориона (React + TypeScript): исходники окон. Сборка — npm run ui:build из корня."
+}

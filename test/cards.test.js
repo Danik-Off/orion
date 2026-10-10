@@ -2,8 +2,8 @@
 const { makeRegistry } = require('./helpers');
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { countdown, whenLabel, timeText, degreesText } = require('../src/renderer/cards');
-const { hintsFor, HINTS } = require('../src/renderer/commands');
+const { countdown, whenLabel, timeText, degreesText } = require('../src/ui/src/lib/format.ts');
+const { hintsFor, HINTS } = require('../src/ui/src/lib/commands.ts');
 const { createAssistant } = require('../src/core/assistant');
 const { soundOf, stationOf, isSoundUrl } = require('../src/lib/sounds');
 const { fromText } = require('../src/lib/text-args');

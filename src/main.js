@@ -57,14 +57,15 @@ const modelsDir = resolveModelsDir({ config, packaged, root, dataDir, baseDir: p
 const ui = createWindowManager({
   title: config.name,
   preload: path.join(__dirname, 'preload.js'),
-  html: path.join(__dirname, 'renderer', 'index.html'),
+  html: path.join(__dirname, 'ui', 'dist', 'index.html'),
   pinned: config.pinned === true,
+  cube: () => config.ui?.cube !== false, // скрытое окно оставляет в углу маленький куб
   orbOffset: (area) => radioPlayer?.orbOffset(area) || 0, // плашка — над мини-плеером, если он в том же углу
 });
 const settingsWindow = createSettingsWindow({
   title: config.name,
   preload: path.join(__dirname, 'preload.js'),
-  html: path.join(__dirname, 'renderer', 'settings', 'index.html'),
+  html: path.join(__dirname, 'ui', 'dist', 'settings.html'),
   above: () => ui.pinned(),
 });
 const ipc = createIpc(ui, settingsWindow);
@@ -101,7 +102,10 @@ settings = createSettingsIpc({
   ipc,
   registerHotkey,
   secrets,
-  onSaved: (patch) => 'radio.player.show' in patch && radioPlayer.refresh(),
+  onSaved: (patch) => {
+    if ('radio.player.show' in patch) radioPlayer.refresh();
+    if ('ui.cube' in patch && ui.tucked()) ui.setMode('hidden'); // куб включили или выключили, пока окно скрыто
+  },
 });
 app.whenReady().then(() => {
   secrets.openInto(config);
@@ -109,7 +113,7 @@ app.whenReady().then(() => {
 });
 const radioPlayer = createRadioPlayer({
   preload: path.join(__dirname, 'preload.js'),
-  html: path.join(__dirname, 'renderer', 'radio-player', 'index.html'),
+  html: path.join(__dirname, 'ui', 'dist', 'radio-player.html'),
   config,
   radio: services.radio,
   saveSettings: (patch) => settings.save(patch),

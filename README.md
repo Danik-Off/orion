@@ -71,10 +71,10 @@
   </tr>
 </table>
 
-Когда окно спрятано, Орион отвечает маленькой плашкой в углу экрана — она не мешает работать и сама исчезает:
+Когда окно спрятано, Орион — маленький светящийся куб в углу экрана. Позовите его — и из куба развернётся голограмма с ответом: она не мешает работать и сама сворачивается обратно:
 
 <p align="center">
-  <img src="docs/screenshots/06-corner.png" width="600" alt="Плашка Ориона в углу рабочего стола">
+  <img src="docs/screenshots/06-corner.png" width="600" alt="Голограмма Ориона с прогнозом погоды в углу рабочего стола">
 </p>
 
 ## Установка
@@ -158,14 +158,14 @@
 
 ## Для разработчиков
 
-Electron; речь — [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (распознавание Zipformer, голос Supertonic 3,
+Electron, окна — React и TypeScript; речь — [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (распознавание Zipformer, голос Supertonic 3,
 узнавание голоса CAM++, ударения — [silero-stress](https://github.com/snakers4/silero-stress), перенесённый на JS);
 языковые модели — дообученная FunctionGemma 270M и Qwen3.5-4B во встроенном [llama.cpp](https://github.com/ggml-org/llama.cpp).
 Навык — это один файл: описание для модели, примеры и функция `run`. Добавить свой навык несложно.
 
 ```bash
 npm install
-npm start          # при первом запуске докачает модели
+npm start          # соберёт окна (React + Vite) и запустит; при первом запуске докачает модели
 npm test           # быстрые тесты без сети и моделей
 npm run check      # линтер (ESLint), оформление (Prettier) и тесты — то же, что проверяет CI
 npm run eval       # точность понимания на контрольных фразах с настоящей моделью

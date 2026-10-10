@@ -9,7 +9,7 @@ const { createAssistant } = require('../src/core/assistant');
 const { fromText } = require('../src/lib/text-args');
 const { extractAnswer } = require('../src/lib/extract-answer');
 const { parseCall, routable } = require('../src/core/router');
-const { isContinuation, isStopForOrion } = require('../src/renderer/commands');
+const { isContinuation, isStopForOrion } = require('../src/ui/src/lib/commands.ts');
 const { parseClock } = require('../src/lib/clock');
 const { durationFromText, wordsToNumber } = require('../src/lib/ru');
 
