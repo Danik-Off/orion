@@ -65,6 +65,11 @@ function confidence(tokens) {
 // server — свой llama-server с моделью router.model (core/llama.js); dataDir — куда писать набор;
 // alone() — большой модели нет: передавать некому, поэтому догадка маленькой берётся и при меньшей уверенности
 // (router.minConfidenceAlone), а аргумент, который писала бы большая, разбирают правила (lib/text-args.js)
+// Инструменты, ошибка которых что-то делает с компьютером, — и глаголы, без которых их не зовут
+const RISKY = new Set(['steam_launch', 'open_app', 'close_app', 'power', 'run_command', 'file_op', 'type_text', 'open_url', 'pc_setting']);
+const ACTION_VERB =
+  /(?<!\p{L})(?:запуст|откр|закр|включ|выключ|вруб|выруб|поигра|сыгра|играть|заверш|перезагр|напечат|набер|наби|создай|созда|удали|перемест|переимен|скопир|сохрани|зайди|перейди|отключ|подключ|сделай|поставь|поменяй|смени|верни|убери|усыпи|заблок|запусти|переключ|перевед|выстав|установ|убав|прибав|активир|деактивир)\p{L}*/iu;
+
 function createRouter({ config, server, skills, audit = () => {}, dataDir, alone = () => false }) {
   // Настройки читаются при каждом запросе: включить, выключить или сменить порог можно без перезапуска
   const DEFAULTS = { enabled: true, exclude: [], maxSkills: 3, collect: true, minConfidence: 0.95 };
@@ -153,6 +158,12 @@ function createRouter({ config, server, skills, audit = () => {}, dataDir, alone
       return null;
     }
     const skill = skills.skillOf(c.name);
+    // Инструмент с последствиями — только если во фразе есть просьба это сделать: «вы на джойстике играете»
+    // (разговор в комнате) маленькая модель уверенно приняла за «запусти Deadlock» (случай из журнала)
+    if (RISKY.has(c.name) && !ACTION_VERB.test(text)) {
+      audit({ router: 'передал', input: text, tool: c.name, p, ms, risky: 'нет глагола-просьбы' });
+      return null;
+    }
     if (alone()) {
       // Без большой модели проверить её некому: инструмент — только если во фразе есть слова его навыка
       // («сколько стоит iPhone» ≠ закрыть программу), аргумент — по правилам, а её собственный — лишь уверенный
@@ -196,4 +207,4 @@ function createRouter({ config, server, skills, audit = () => {}, dataDir, alone
   return { route, record, warmup, needsModel, enabled: () => cfg().enabled && server.available() };
 }
 
-module.exports = { createRouter, parseCall, routable, confidence, SYSTEM, MULTI };
+module.exports = { createRouter, parseCall, routable, confidence, SYSTEM, MULTI, RISKY, ACTION_VERB };

@@ -282,3 +282,89 @@ test('маленькая модель: фраза для сервера MCP — 
     r.close();
   }
 });
+
+test('надёжность: модель упала в узком промпте — аргумент правилами; шаг сценария без большой модели — правилами', async () => {
+  const { skills, store, ctx } = makeRegistry();
+  // Маленькая модель назвала инструмент, большая падает
+  const log = [];
+  const llm = { chat: async () => Promise.reject(new Error('llama-server умер')), available: () => true };
+  const stages = (std) => [
+    { name: 'router', plan: (turn) => ((turn.focus = { tool: 'timer', skill: 'reminders' }), null) },
+    ...std.filter((s) => s.name !== 'quick'),
+  ];
+  const a = createAssistant({ config: ctx.config, llm, skills, memory: store, audit: (e) => log.push(e), notify: () => {}, stages });
+  const r = await a.handle('засеки мне десять минут на яйца', { source: 'text' });
+  await a.reset();
+  assert.equal(r.actions[0]?.tool, 'timer', JSON.stringify(r));
+  assert.match(r.actions[0].arg, /^600\|/);
+  assert.ok(log.some((e) => e.brain === 'ошибка в узком промпте'));
+  await skills.run('timer', 'cancel');
+
+  // Сценарий без большой модели: шаг «поставь таймер на 10 минут» не уходит в «нужна большая модель»
+  const off = { chat: async () => assert.fail('модели нет'), available: () => false };
+  const b = createAssistant({ config: ctx.config, llm: off, skills, memory: store, audit: () => {}, notify: () => {} });
+  const said = await b.perform('поставь таймер на 10 минут');
+  assert.doesNotMatch(said, /большая языковая модель/);
+  await skills.run('timer', 'cancel');
+});
+
+test('разговор в комнате: длинное непонятное голосом — молчать; маленькая модель не запускает игру без просьбы', async () => {
+  const { skills, store, ctx } = makeRegistry();
+  const { llm } = fakeLlm(['{"topic":"chat","actions":[],"say":"Не расслышал, сэр. Повторите?"}']);
+  const log = [];
+  const a = createAssistant({ config: ctx.config, llm, skills, memory: store, audit: (e) => log.push(e), notify: () => {} });
+  const r = await a.handle('вы на джойстике играете вообще или нет', { source: 'wake-window' });
+  assert.equal(r.ignored, true, 'не встревать в чужой разговор');
+  assert.ok(log.some((e) => e.chatter));
+  // Имя в самой фразе — к нам, переспросить; короткое после имени — тоже; набранное — ответить
+  assert.match((await a.handle('и разбивали на грего', { source: 'wake' })).say, /Не расслышал/);
+  assert.match((await a.handle('зовут', { source: 'wake-window' })).say, /Не расслышал/);
+  assert.match((await a.handle('вы на джойстике играете вообще или нет', { source: 'text' })).say, /Не расслышал/);
+  await a.reset();
+
+  const { RISKY, ACTION_VERB } = require('../src/core/router');
+  assert.ok(RISKY.has('steam_launch'));
+  assert.equal(ACTION_VERB.test('вы сука на джойстике играете'), false);
+  assert.equal(ACTION_VERB.test('давай поиграем в дедлок'), true);
+});
+
+test('агент-разработчик — только для кода: письмо и план тренировок модель пишет сама', async () => {
+  const { skills, store, ctx } = makeRegistry({ planner: 'single' });
+  // Модель упорно выбирает агента (первый раз навык ещё не загружен — переспрос с ним), затем — подсказка
+  const toAgent = '{"topic":"delegate","actions":[{"tool":"delegate","arg":"Написать письмо начальнику"}],"say":""}';
+  const { llm, calls } = fakeLlm([
+    toAgent,
+    toAgent,
+    '{"topic":"chat","actions":[],"say":"Здравствуйте! Сегодня я заболел и не смогу выйти на работу."}',
+  ]);
+  const log = [];
+  const a = createAssistant({ config: ctx.config, llm, skills, memory: store, audit: (e) => log.push(e), notify: () => {} });
+  const r = await a.handle('напиши письмо начальнику, что я заболел', { source: 'text' });
+  await a.reset();
+  assert.deepEqual(r.actions, []);
+  assert.match(r.say, /заболел/);
+  assert.equal(calls.length, 3);
+  assert.match(calls[2].system + JSON.stringify(calls[2].messages), /не задача для программиста/);
+  assert.ok(log.some((e) => e.notDevTask));
+
+  const { makeRegistry: mk } = require('./helpers');
+  const files = mk().skills;
+  const cases = {
+    'открой папку проекты': 'open_folder проекты',
+    'покажи папку с документами': 'open_folder документы',
+    'сколько места занимают загрузки': 'folder_info загрузки',
+    'какие файлы на рабочем столе': 'recent_files рабочий стол',
+    'перескажи последний скачанный документ': 'read_file последний скачанный документ|summary',
+    'что написано в договоре про сроки оплаты': 'read_file договор|сроки оплаты',
+    'переименуй последний скачанный файл в отчёт за сентябрь': 'file_op rename последний скачанный файл|отчет за сентябрь',
+    'перемести его на рабочий стол': 'file_op move это|рабочий стол',
+    'удали этот файл': 'file_op delete это',
+    'создай на рабочем столе папку отпуск': 'file_op mkdir отпуск|рабочий стол',
+    'скопируй путь к этому файлу': 'file_op path это',
+  };
+  for (const [text, want] of Object.entries(cases)) {
+    const act = files.quickPlan(text)?.actions?.[0];
+    assert.equal(act ? `${act.tool} ${act.arg}` : null, want, text);
+  }
+  assert.equal(files.quickPlan('сколько весит луна'), null, 'Луна — не папка');
+});

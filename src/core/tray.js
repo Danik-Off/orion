@@ -64,4 +64,4 @@ function createTray({ name, onShow, onToggleMic, onSettings, onCheckUpdates, onQ
   return tray;
 }
 
-module.exports = { createTray };
+module.exports = { createTray, drawReactor };

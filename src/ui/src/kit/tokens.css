@@ -1,4 +1,4 @@
-/* «Призма» — дизайн-система Ориона: светящийся куб и прозрачная голограмма.
+/* «Призма» — дизайн-система Ориона: светящийся шар и прозрачная голограмма.
    Один цвет на состояние (--holo — тройка RGB, чтобы задавать прозрачность): бирюза — готов и отвечает,
    мята — слушает, фиолет — думает, янтарь — ждёт «да/нет» или ошибка, серый — микрофон выключен.
    Острые углы, развёртка, мерцает рамка — не текст. Шрифты встроены (OFL): Unbounded — цифры и заголовки,
@@ -42,28 +42,65 @@
   --font-mono: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
 
   --shadow-text: 0 1px 2px rgba(0, 0, 0, 0.85);
-  --lvl: 0; /* громкость голоса 0..1 — куб «дышит» (задаёт контроллер разговора) */
+  --tone-shift: --hr 0.45s ease, --hg 0.45s ease, --hb 0.45s ease; /* смена цвета состояния */
+  --lvl: 0; /* громкость голоса 0..1 — шар «дышит» (задаёт контроллер разговора) */
 
   color-scheme: dark;
   font-family: var(--font-ui);
   color: var(--text);
 }
 
-/* Состояние → цвет: задаётся на любом блоке, всё внутри перекрашивается */
+/* Состояние → цвет: задаётся на любом блоке, всё внутри перекрашивается.
+   Цвет — три зарегистрированных числа (--hr --hg --hb): браузер переводит их плавно, а --holo собирается
+   из них на том же блоке — при смене состояния всё, что берёт --holo, перетекает в новый цвет, а не мигает */
+@property --hr {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 95;
+}
+@property --hg {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 255;
+}
+@property --hb {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 224;
+}
 .tone-teal {
-  --holo: var(--teal);
+  --hr: 95;
+  --hg: 255;
+  --hb: 224;
 }
 .tone-mint {
-  --holo: var(--mint);
+  --hr: 93;
+  --hg: 255;
+  --hb: 180;
 }
 .tone-violet {
-  --holo: var(--violet);
+  --hr: 180;
+  --hg: 140;
+  --hb: 255;
 }
 .tone-amber {
-  --holo: var(--amber);
+  --hr: 255;
+  --hg: 180;
+  --hb: 92;
 }
 .tone-grey {
-  --holo: var(--grey);
+  --hr: 150;
+  --hg: 175;
+  --hb: 180;
+}
+.tone-teal,
+.tone-mint,
+.tone-violet,
+.tone-amber,
+.tone-grey {
+  --holo: var(--hr), var(--hg), var(--hb);
+  --label: color-mix(in srgb, rgb(var(--holo)) 55%, #f2fffd); /* подписи — в оттенке состояния */
+  transition: var(--tone-shift);
 }
 
 * {

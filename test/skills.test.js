@@ -72,8 +72,42 @@ test('таймер: секунды, текст, отмена, границы', a
   assert.equal((await skills.run('timer', '0|x')).ok, false);
   assert.equal(reminders.length, 0, 'таймер не должен срабатывать сразу');
   await new Promise((r) => setTimeout(r, 1200));
-  assert.deepEqual(reminders.sort(), ['время вышло', 'чайник']);
+  assert.deepEqual(reminders.sort(), ['Время вышло.', 'чайник']);
   assert.match((await skills.run('timer', 'cancel')).message, /таймер/i);
+});
+
+test('таймеры: сколько осталось, отмена по подписи, переживают перезапуск; пропущенный будильник сказан', async () => {
+  const reminders = require('../src/skills/reminders');
+  const dir = tmp();
+  const said = [];
+  const ctx = { dataDir: dir, remind: (t) => said.push(t), audit: () => {}, onSchedule: () => {} };
+  reminders.init(ctx);
+  const run = (name, arg) => reminders.tools.find((t) => t.name === name).run(arg, ctx, {});
+  await run('timer', '600|паста');
+  await run('timer', '1800|позвонить маме');
+  const left = (await run('reminders', '')).speak;
+  assert.match(left, /паста — через (9|10) минут/);
+  assert.match(left, /позвонить маме — через (29|30) минут/);
+  assert.match((await run('timer', 'cancel для пасты')).message, /Таймер отменён/);
+  assert.doesNotMatch((await run('reminders', '')).speak, /паста/);
+  // Перезапуск: таймер «позвонить маме» восстановлен из файла
+  const saved = JSON.parse(fs.readFileSync(path.join(dir, 'timers.json'), 'utf8')).items;
+  assert.equal(saved.length, 1);
+  saved.push({ id: 't99', at: Date.now() - 60_000, text: 'чайник' }); // истёк, пока приложение было закрыто
+  fs.writeFileSync(path.join(dir, 'timers.json'), JSON.stringify({ items: saved }));
+  reminders.init(ctx);
+  assert.match((await run('reminders', '')).speak, /позвонить маме/);
+  // Будильник, который проспал выключенный компьютер, — не звенит, но сказан
+  const items = [{ id: 7, alarm: true, text: 'будильник', at: Date.now() - 3_600_000 }];
+  fs.writeFileSync(path.join(dir, 'reminders.json'), JSON.stringify({ items }));
+  reminders.init(ctx);
+  reminders._tick(ctx);
+  assert.ok(
+    said.some((t) => /Пропущен будильник на \d\d:\d\d/.test(t)),
+    said.join(' | '),
+  );
+  await run('timer', 'cancel');
+  reminders._reset();
 });
 
 test('браузер открывается только явным browser_search и только http(s)', async () => {
@@ -361,7 +395,7 @@ test('таймер «на секунд десять»; вопрос про пр�
   const { durationFromText } = require('../src/lib/ru');
   assert.equal(durationFromText('поставь таймер на секунд десять'), 10, 'число после единицы (было: 1 секунда)');
   assert.equal(durationFromText('напомни минут через пять'), 300);
-  assert.equal(durationFromText('через час двадцать'), 3600, '«час двадцать» — не двадцать часов');
+  assert.equal(durationFromText('через час двадцать'), 4800, '«час двадцать» — час и двадцать минут, а не двадцать часов');
   assert.equal(durationFromText('через 2 часа 15 минут'), 8100);
   assert.equal(durationFromText('таймер на пятнадцать секунд'), 15);
   const { focusOf } = require('../src/skills/pc');
@@ -499,4 +533,213 @@ test('искажённое название программы: переспро
   assert.equal(r.ok, false);
   ctx.confirm = async () => true;
   assert.equal((await skills.run('open_app', 'ворт')).ok, true, 'согласился — открыть');
+});
+
+test('калькулятор и длительности: дроби с запятой, проценты как на калькуляторе, числа в родительном падеже', async () => {
+  const { skills } = makeRegistry();
+  const calc = async (t) => {
+    const a = skills.quickPlan(t)?.actions?.[0];
+    assert.equal(a?.tool, 'calc', t);
+    return (await skills.run('calc', a.arg)).speak;
+  };
+  assert.equal(await calc('сколько будет 2,5 умножить на 4'), 'Получается 10.', '«2,5» — дробь, а не 25');
+  assert.equal(await calc('1.5 плюс 2'), 'Получается 3,5.');
+  assert.equal(await calc('сколько будет 100 минус 10%'), 'Получается 90.', 'как на калькуляторе, а не 99,9');
+  assert.equal(await calc('200 плюс 10 процентов'), 'Получается 220.');
+  assert.equal(await calc('двадцать процентов от пятисот'), 'Получается 100.');
+  assert.equal(await calc('15% от 300'), 'Получается 45.');
+  assert.equal(await calc('сколько будет 2 + 2 * 2'), 'Получается 6.');
+  assert.equal((await skills.run('calc', '2 5 * 4')).ok, false, 'два числа подряд — ошибка, а не 25');
+
+  const { durationFromText: d } = require('../src/lib/ru');
+  assert.equal(d('таймер на полторы минуты'), 90);
+  assert.equal(d('через две с половиной минуты'), 150);
+  assert.equal(d('на полминуты'), 30);
+  assert.equal(d('через пол часа'), 1800);
+  assert.equal(d('через пару минут'), 120);
+  assert.equal(d('через два часа тридцать'), 9000);
+});
+
+test('покупки: «молоко, хлеб и сыр» — три пункта; «купил хлеб и молоко» — вычеркнуть оба', async () => {
+  const { skills } = makeRegistry();
+  const say = async (t) => {
+    const a = skills.quickPlan(t).actions[0];
+    return (await skills.run(a.tool, a.arg, { text: t })).speak;
+  };
+  assert.equal(await say('надо купить молоко, хлеб и сыр'), 'Записал в список «покупки»: молоко, хлеб, сыр.');
+  assert.equal(await say('я купил хлеб и молоко'), 'Вычеркнул: хлеб, молоко.');
+  assert.equal(await say('что купить'), 'В списке «покупки»: сыр.');
+});
+
+test('погода: часть дня по часам, города из двух слов и разговорные названия, общий предел ожидания', async () => {
+  const weather = require('../src/skills/weather');
+  const { fromText } = require('../src/lib/text-args');
+  assert.equal(fromText('weather', 'нужен ли зонт в нью йорке'), 'нью йорке|сегодня');
+  assert.equal(fromText('weather', 'будет ли дождь вечером'), '|вечером');
+  assert.equal(fromText('weather', 'какая погода завтра утром в казани'), 'казани|завтра утром');
+  assert.equal(weather.alias('питере'), 'Санкт-Петербург');
+  assert.equal(weather.alias('Нижнем Новгороде'), 'Нижний Новгород');
+  assert.equal(weather.alias('нью йорке'), 'Нью-Йорк');
+
+  // Подставной Open-Meteo: сегодня вечером дождь
+  const today = new Date();
+  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const day = ymd(today);
+  const hours = Array.from({ length: 24 }, (_, h) => `${day}T${String(h).padStart(2, '0')}:00`);
+  const forecast = {
+    current: { temperature_2m: 12, apparent_temperature: 11, weather_code: 1, wind_speed_10m: 3 },
+    daily: { time: [day], temperature_2m_max: [15], temperature_2m_min: [6], precipitation_probability_max: [70], weather_code: [61] },
+    hourly: {
+      time: hours,
+      temperature_2m: hours.map((_, h) => (h >= 18 ? 8 : 13)),
+      precipitation_probability: hours.map((_, h) => (h >= 18 ? 70 : 0)),
+      weather_code: hours.map((_, h) => (h >= 18 ? 61 : 1)),
+    },
+  };
+  const realFetch = global.fetch;
+  global.fetch = async (url) => ({
+    ok: true,
+    json: async () => (/geocoding/.test(url) ? { results: [{ name: 'Тестоград', latitude: 1.5, longitude: 2.5 }] } : forecast),
+  });
+  try {
+    const r = await weather.report('Тестоград|вечером', 'Москва');
+    assert.match(
+      r.speak,
+      /^Сегодня вечером в городе Тестоград небольшой дождь, около плюс 8 градусов\. Вероятность осадков 70 процентов — зонт пригодится\.$/,
+    );
+  } finally {
+    global.fetch = realFetch;
+  }
+});
+
+test('курсы: рубли в доллары, доллары в евро через рубль; ошибка сервиса — так и сказано', async () => {
+  const rates = require('../src/skills/rates');
+  const run = (arg) => rates.tools[0].run(arg).then((r) => r.speak);
+  const { fromText } = require('../src/lib/text-args');
+  assert.equal(fromText('rate', 'сколько будет 1000 рублей в долларах'), '1000 RUB>USD');
+  assert.equal(fromText('rate', 'переведи 50 долларов в евро'), '50 USD>EUR');
+  assert.equal(fromText('rate', 'сколько юаней за 1000 рублей'), '1000 RUB>CNY');
+  assert.equal(fromText('rate', 'сто долларов в рублях'), '100 USD');
+
+  const xml =
+    '<ValCurs Date="01.01.2000"><Valute><CharCode>USD</CharCode><Nominal>1</Nominal><Name>Доллар США</Name><Value>80,0000</Value></Valute>' +
+    '<Valute><CharCode>EUR</CharCode><Nominal>1</Nominal><Name>Евро</Name><Value>100,0000</Value></Valute></ValCurs>';
+  const realFetch = global.fetch;
+  let status = 200;
+  global.fetch = async () => ({ ok: status === 200, status, arrayBuffer: async () => new TextEncoder().encode(xml).buffer });
+  try {
+    assert.equal(await run('1000 RUB>USD'), '1 000 рублей — это 12,5 доллара по курсу ЦБ на 01.01.2000.');
+    assert.equal(await run('50 USD>EUR'), '50 долларов — это 40 евро по курсу ЦБ на 01.01.2000.');
+    assert.equal(await run('25 USD'), '25 долларов — это 2 000 рублей по курсу ЦБ на 01.01.2000.');
+    status = 503;
+    assert.match(await run('USD'), /^Сайт ЦБ сейчас не отвечает/, 'сбой сервиса — не «ЦБ не публикует курс»');
+  } finally {
+    global.fetch = realFetch;
+  }
+});
+
+test('музыка: YouTube не ответил — для жанра включается радио, для песни — сказано, что не отвечает YouTube', async () => {
+  const youtube = music.tools.find((t) => t.name === 'youtube');
+  assert.equal(youtube.filler, 'Ищу на YouTube.');
+  const calls = [];
+  const ctx = { audit: () => {}, call: async (tool, arg) => (calls.push([tool, arg]), { ok: true, speak: 'Играет «Relax FM».' }) };
+  const realFetch = global.fetch;
+  global.fetch = async () => Promise.reject(Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }));
+  try {
+    const r = await youtube.run('спокойная музыка микс', ctx);
+    assert.deepEqual(calls, [['radio', 'спокойн']]);
+    assert.match(r.speak, /^YouTube сейчас не отвечает, сэр, поэтому включаю радио\. Играет/);
+    const song = await youtube.run('Кино Группа крови', ctx);
+    assert.equal(song.ok, false);
+    assert.match(song.message, /^YouTube сейчас не отвечает/, 'не «нет связи с интернетом»');
+  } finally {
+    global.fetch = realFetch;
+  }
+});
+
+test('мелочи: монетка, кубики, случайное число в диапазоне, секундомер — без модели', async () => {
+  const { skills } = makeRegistry();
+  const run = async (t) => {
+    const a = skills.quickPlan(t)?.actions?.[0];
+    assert.ok(a, t);
+    return (await skills.run(a.tool, a.arg)).speak;
+  };
+  assert.match(await run('подбрось монетку'), /^(Орёл|Решка)\.$/);
+  assert.match(await run('брось два кубика'), /^Выпало [1-6], [1-6] — в сумме \d+\.$/);
+  for (let i = 0; i < 20; i++) {
+    const n = Number((await run('загадай число от 1 до 10')).replace('.', ''));
+    assert.ok(n >= 1 && n <= 10, String(n));
+  }
+  assert.match(await run('случайное число от пяти до двадцати'), /^\d+\.$/);
+  assert.equal(skills.quickPlan('загадай число до пятидесяти').actions[0].arg, '1 50');
+  assert.equal(await run('запусти секундомер'), 'Секундомер пошёл.');
+  assert.match(await run('сколько прошло'), /^Прошло \d+ секунд/);
+  assert.match(await run('останови секундомер'), /^Стоп: /);
+  assert.equal(await run('сбрось секундомер'), 'Секундомер сброшен.');
+  assert.equal(skills.quickPlan('сколько прошло'), null, 'секундомер не запущен — «сколько прошло» не про него');
+});
+
+test('перевод единиц и времена года: считает код, «дней до нового года» — не перевод', async () => {
+  const { skills } = makeRegistry();
+  const say = async (t) => {
+    const a = skills.quickPlan(t)?.actions?.[0];
+    assert.equal(a?.tool, 'convert', t);
+    return (await skills.run(a.tool, a.arg)).speak;
+  };
+  assert.equal(await say('сколько будет 5 миль в километрах'), '5 миль — это 8,047 километра.');
+  assert.equal(await say('100 градусов по фаренгейту это сколько по цельсию'), '100 градусов Фаренгейта — это 37,778 градуса Цельсия.');
+  assert.equal(await say('сколько сантиметров в дюйме'), '1 дюйм — это 2,54 сантиметра.');
+  assert.equal(await say('60 миль в час в километрах в час'), '60 миль в час — это 96,561 километра в час.');
+  assert.equal(await say('сколько будет 2,5 литра в галлонах'), '2,5 литра — это 0,66 галлона.');
+  assert.equal(await say('сколько будет 5 фунтов в килограммах'), '5 фунтов — это 2,268 килограмма.', 'фунты — вес, а не валюта');
+  assert.match(await say('минус сорок по цельсию в фаренгейтах'), /^-40 градусов Цельсия — это -40 градусов Фаренгейта\.$/);
+  assert.equal((await skills.run('convert', '5 km>kg')).ok, false, 'разные величины');
+
+  assert.equal(skills.quickPlan('сколько дней до нового года').actions[0].arg, 'until 01-01');
+  assert.equal(skills.quickPlan('сколько дней до весны').actions[0].arg, 'until 03-01', 'весна — 1 марта, а не 1 мая');
+  assert.equal(skills.quickPlan('сколько осталось до зимы').actions[0].arg, 'until 12-01');
+});
+
+test('зрение: «что на экране» — снимок видит только встроенная модель; нужен интернет — ищет запрос модели', async () => {
+  const vision = require('../src/skills/vision');
+  const { quick, parseAnswer, lookScreen } = vision._test;
+  assert.equal(quick('что на экране').actions[0].tool, 'look_screen');
+  assert.equal(quick('подскажи как пройти этот уровень').actions[0].tool, 'look_screen');
+  assert.equal(quick('сделай скриншот'), null, 'снимок в файл — другой навык');
+  assert.deepEqual(parseAnswer('На экране ошибка 0x80070005 в Steam.\nПОИСК: Steam ошибка 0x80070005'), {
+    say: 'На экране ошибка 0x80070005 в Steam.',
+    query: 'Steam ошибка 0x80070005',
+  });
+
+  const asked = [];
+  const searched = [];
+  const make = (status, answer, extra = {}) => ({
+    config: { name: 'Орион' },
+    audit: () => {},
+    confirm: async () => false,
+    remind: () => {},
+    call: async (tool, q) => (searched.push([tool, q]), { ok: true, speak: 'Помогает перезапуск Steam от имени администратора.' }),
+    vision: {
+      status: () => ({ local: true, supported: true, installed: true, installing: false, size: 6.72e8, ...status }),
+      capture: async () => 'data:image/jpeg;base64,AAAA',
+      ask: async (img, q) => (asked.push(q), answer),
+      install: async () => {},
+    },
+    ...extra,
+  });
+  // Внешняя модель по API — снимок не отправляем
+  let r = await lookScreen('что на экране', make({ local: false }, ''));
+  assert.equal(r.ok, false);
+  assert.match(r.message, /не должен уходить в интернет/);
+  assert.equal(asked.length, 0);
+  // Проектор не скачан — спросить, отказались — ничего не качать
+  r = await lookScreen('что на экране', make({ installed: false }, ''));
+  assert.match(r.message, /без зрения/);
+  // Обычный ответ
+  r = await lookScreen('что на экране', make({}, 'Открыт браузер со страницей погоды: плюс 11.'));
+  assert.equal(r.speak, 'Открыт браузер со страницей погоды: плюс 11.');
+  // Модель просит интернет
+  r = await lookScreen('что это за ошибка', make({}, 'Steam пишет ошибку 0x80070005.\nПОИСК: Steam 0x80070005'));
+  assert.deepEqual(searched, [['web_search', 'Steam 0x80070005']]);
+  assert.equal(r.speak, 'Steam пишет ошибку 0x80070005. Помогает перезапуск Steam от имени администратора.');
 });

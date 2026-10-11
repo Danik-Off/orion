@@ -7,6 +7,7 @@ module.exports = [
   require('./onboarding'), // знакомство после установки — первым из предложений при запуске
   require('./scenarios'),
   require('./weather'),
+  require('./units'), // раньше курсов: «фунты в килограммах» — вес, а не валюта
   require('./rates'),
   require('./search'),
   require('./apps'),
@@ -24,9 +25,11 @@ module.exports = [
   require('./pc'),
   require('./network'),
   require('./screen'),
+  require('./vision'),
   require('./files'),
   require('./text'),
   require('./calc'),
+  require('./games'),
   require('./dates'),
   require('./news'),
   require('./briefing'),

@@ -1,4 +1,4 @@
-// Мини-плеер радио: голографическая полоска поверх окон — куб, станция и песня, пауза, другая станция,
+// Мини-плеер радио: голографическая полоска поверх окон — шар, станция и песня, пауза, другая станция,
 // громкость (ползунок и колёсико), выключить. Звук играет окно разговора; здесь — только пульт.
 // Окно перетаскивается за любое место, кроме кнопок и громкости (main прилепит его к ближайшему углу).
 import { StrictMode, useEffect, useRef, useState } from 'react';
@@ -6,7 +6,8 @@ import { createRoot } from 'react-dom/client';
 import '../kit/kit.css';
 import './player.css';
 import { api, type PlayerState } from '../bridge.ts';
-import { Cube } from '../kit/Cube.tsx';
+import { ErrorBoundary } from '../kit/ErrorBoundary.tsx';
+import { Sphere } from '../kit/Sphere.tsx';
 import { Holo } from '../kit/Holo.tsx';
 import { IconButton } from '../kit/controls.tsx';
 
@@ -22,26 +23,56 @@ function Player() {
     });
   }, []);
 
-  // Колёсико над плеером — тоже громкость
+  // Колёсико над плеером — тоже громкость. Прокрутка копится: щелчок мыши (100 единиц) — 5%, тачпад со
+  // множеством мелких событий меняет громкость плавно, а не скачет 0 ↔ 100; горизонтальный жест — не громкость
+  const volumeRef = useRef(volume);
+  volumeRef.current = volume;
   useEffect(() => {
-    const wheel = (e: WheelEvent) =>
-      setVolume((v) => {
-        const next = Math.max(0, Math.min(100, v + (e.deltaY < 0 ? 5 : -5)));
-        api().radioControl('volume', next / 100);
-        api().radioControl('volume-done');
-        return next;
-      });
+    let pending = 0;
+    let done: ReturnType<typeof setTimeout> | undefined;
+    const wheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      pending += e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY; // строки → пиксели
+      const steps = Math.trunc(pending / 100);
+      if (!steps) return;
+      pending -= steps * 100;
+      const next = Math.max(0, Math.min(100, volumeRef.current - steps * 5));
+      if (next === volumeRef.current) return;
+      setVolume(next);
+      api().radioControl('volume', next / 100);
+      clearTimeout(done);
+      done = setTimeout(() => api().radioControl('volume-done'), 400); // запомнить — когда крутить перестали
+    };
     window.addEventListener('wheel', wheel, { passive: true });
-    return () => window.removeEventListener('wheel', wheel);
+    return () => {
+      window.removeEventListener('wheel', wheel);
+      clearTimeout(done);
+    };
   }, []);
 
   const playing = s.playing === true;
+  const loading = s.status === 'loading';
+  const failed = s.status === 'error';
   return (
-    <Holo className={`player${playing ? ' playing' : ''}`} tone="teal" corners={false} flicker={false}>
-      <Cube size={24} tone={playing ? 'teal' : 'grey'} spin={playing ? 5 : 30} />
-      <div className="player-info" title="Перетащите в любой угол или на другой экран">
+    <Holo
+      className={`player${playing ? ' playing' : ''}${failed ? ' failed' : ''}`}
+      tone={failed ? 'amber' : 'teal'}
+      corners={false}
+      flicker={false}
+    >
+      <Sphere size={24} tone={failed ? 'amber' : playing || loading ? 'teal' : 'grey'} spin={loading ? 1.5 : playing ? 5 : 30} />
+      <div
+        className="player-info"
+        title={failed ? 'Станция не отвечает — попробуйте другую' : s.song || 'Перетащите в любой угол или на другой экран'}
+      >
         <span className="player-name">{s.name || 'Радио'}</span>
-        {s.song && <span className="player-song">{s.song}</span>}
+        {failed ? (
+          <span className="player-song">Не отвечает</span>
+        ) : loading ? (
+          <span className="player-song">Подключаюсь…</span>
+        ) : (
+          s.song && <span className="player-song">{s.song}</span>
+        )}
       </div>
       <div className="player-eq" aria-hidden="true">
         <i />
@@ -84,6 +115,8 @@ function Player() {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <Player />
+    <ErrorBoundary title="радио">
+      <Player />
+    </ErrorBoundary>
   </StrictMode>,
 );

@@ -1,5 +1,6 @@
 // Запрос из окна: фраза → ассистент → ответ. Новый запрос обрывает недоделанный старый.
-const SOURCES = ['text', 'wake', 'hotkey', 'followup', 'followup-voice']; // followup-voice — продолжение, голос подтверждён
+// followup-voice — продолжение, голос подтверждён; wake-window — фраза после одинокого «Орион» (имени в ней нет)
+const SOURCES = ['text', 'wake', 'wake-window', 'hotkey', 'followup', 'followup-voice'];
 const MAX_TEXT = 1000;
 
 // Понятное объяснение сбоя модели — его скажут вслух
@@ -49,7 +50,12 @@ function createAsk({ config, services, voice, ui, ipc }) {
     const me = { controller };
     me.done = new Promise((r) => (me.finished = r));
     current = me;
-    const person = await voice.resolvePerson(personId);
+    // Узнать собеседника не вышло (испорчен файл голосов) — отвечаем как гостю, а не зависаем: без finish
+    // следующий запрос ждал бы этот вечно
+    const person = await voice.resolvePerson(personId).catch((err) => {
+      audit({ error: `узнавание голоса: ${String(err?.message || err).slice(0, 200)}` });
+      return null;
+    });
     if (controller.signal.aborted) return finish(me, { cancelled: true }); // перебили, пока узнавали собеседника
     const src = SOURCES.includes(source) ? source : 'text';
     audit({ ask: text.trim(), source, person: person?.id ?? null });

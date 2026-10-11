@@ -42,9 +42,9 @@ function Components({ ctx }: { ctx: Ctx }) {
   useEffect(() => {
     let current = '';
     const loadParts = async () => {
-      const r = await api.components();
+      const r = await api.components().catch(() => null);
       if (!r) return;
-      setStages(r.stages);
+      setStages(Array.isArray(r.stages) ? r.stages : []);
       setInstalling(!!r.installing);
     };
     void loadParts();
@@ -58,10 +58,13 @@ function Components({ ctx }: { ctx: Ctx }) {
       }
     });
     const offUpdates = api.onUpdatesChanged?.((r) => setUpdates(r));
-    void Promise.all([api.updatesList(), api.settingsGet()]).then(([u, s]) => {
-      setUpdates(u);
-      setVersion(s?.version || '');
-    });
+    void Promise.all([api.updatesList(), api.settingsGet()]).then(
+      ([u, s]) => {
+        setUpdates(u && Array.isArray(u.parts) ? u : null);
+        setVersion(s?.version || '');
+      },
+      () => setUpdates(null),
+    );
     return () => {
       offSetup?.();
       offUpdates?.();

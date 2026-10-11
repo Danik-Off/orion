@@ -4,7 +4,7 @@
 // Состояние приходит от ядра само (onMcpChanged): «подключается…» → «готов» без перезагрузки страницы.
 import { useEffect, useState } from 'react';
 import type { Ctx, Page } from '../rows.ts';
-import { Line, Section, useActions } from '../Row.tsx';
+import { Line, LoadState, Section, useActions } from '../Row.tsx';
 import { Button, TextField, Toggle } from '../../kit/controls.tsx';
 
 interface Tool {
@@ -68,12 +68,18 @@ function Connections({ ctx }: { ctx: Ctx }) {
   const value = (k: string) => values[k] || '';
   const setValue = (k: string, v: string) => setValues((x) => ({ ...x, [k]: v }));
 
+  const [failed, setFailed] = useState('');
+  const load = () => {
+    setFailed('');
+    api.mcpList().then(setData, (err: unknown) => setFailed(String((err as Error)?.message || err)));
+  };
   useEffect(() => {
     const off = api.onMcpChanged?.((r) => setData(r));
-    void api.mcpList().then(setData);
+    load();
     return () => off?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- загрузка одна на открытие раздела
   }, [api]);
-  if (!data) return null;
+  if (!data) return <LoadState failed={failed} retry={load} />;
 
   const q = query.trim().toLowerCase();
   const matches = (...texts: (string | undefined)[]) =>
@@ -138,7 +144,7 @@ function Connections({ ctx }: { ctx: Ctx }) {
                   )}
                   {s.enabled && button(`check:${s.name}`, 'Проверить', 'Проверяю…', () => api.mcpCheck(s.name))}
                   {s.package && button(`update:${s.name}`, 'Обновить', 'Обновляю…', () => api.mcpUpdate(s.name))}
-                  {button(`remove:${s.name}`, 'Удалить', 'Удаляю…', () => api.mcpRemove(s.name))}
+                  {button(`remove:${s.name}`, 'Удалить', 'Удаляю…', () => api.mcpRemove(s.name), false, 'Точно удалить?')}
                 </Line>
                 {open[s.name] && (
                   <div className="mcp-tools">

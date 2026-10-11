@@ -40,6 +40,10 @@ function examplesWithoutBrain(query, skills) {
   return [...new Set([...own.slice(0, 2), ...CAN_DO])].slice(0, 3);
 }
 
+// Признаки задачи для программиста: без них агента не зовём
+const DEV_TASK =
+  /код|скрипт|программ|сайт|(?:^|\s)сет(?:\s|$)|лендинг|визитк|бот|приложени|игр[уы]|парсер|утилит|расширени|плагин|функци|проект|репозитор|(?:^|\s)баг|исправь ошибк|оптимиз|рефактор|отлад|дебаг|компил|питон|python|javascript|джаваскрипт|typescript|html|css|(?:^|\s)api(?:\s|$)|сервер|базу данных|sql|гитхаб|github|верстк|сверста|разработ/i;
+
 function createModelPlanner({ config, llm, skills, prompts, audit, cloud = null }) {
   // Модель отказалась — переспросить с навыком-запасным: просьбу что-то сделать она передаст ему,
   // а на отказ в разговоре («я не могу чувствовать») ответит как раньше
@@ -54,6 +58,19 @@ function createModelPlanner({ config, llm, skills, prompts, audit, cloud = null 
     const passed = retry.actions.length > 0 && retry.actions.every((a) => skills.skillOf(a.tool) === fallback);
     audit({ skillFallback: fallback, input: query, used: passed });
     return passed ? retry : null;
+  }
+
+  // Агент-разработчик — для кода, сайтов, ботов, проектов. «Напиши письмо начальнику», «составь план
+  // тренировок» — это текст, его пишет сама модель: переспросить без агента (случаи из замера)
+  async function notDevTask(plan, turn) {
+    const { ids, ask, query } = turn;
+    if (!plan.actions.some((a) => a.tool === 'delegate') || DEV_TASK.test(query)) return null;
+    const retry = await ask(
+      ids.filter((id) => id !== 'delegate'),
+      'подсказка: это не задача для программиста — ответь сам, текстом, без delegate',
+    );
+    audit({ notDevTask: query, used: !retry.actions.some((a) => a.tool === 'delegate') });
+    return retry.actions.some((a) => a.tool === 'delegate') ? null : retry;
   }
 
   // Локальная модель не справилась — спросить облако (с разрешения; туда уходит только эта фраза)
@@ -85,7 +102,7 @@ function createModelPlanner({ config, llm, skills, prompts, audit, cloud = null 
   }
 
   const twoStep = () => config.planner === 'two-step';
-  const BEFORE_SPEECH = [delegate, askCloud];
+  const BEFORE_SPEECH = [notDevTask, delegate, askCloud];
   // Диспетчер видит все инструменты — подгружать названный навык ему не нужно
   const afterSpeech = () => (twoStep() ? [hintLikelySkill] : [loadNamedSkill, hintLikelySkill]);
   const planOptions = () => ({ temperature: config.planTemperature ?? 0.1 });
@@ -158,9 +175,17 @@ function createModelPlanner({ config, llm, skills, prompts, audit, cloud = null 
     return chatPlan(`${NO_BRAIN} Например: ${examples}.`);
   }
 
-  async function planFocused({ focus, query, who, mem }) {
+  async function planFocused({ focus, query, who, mem, signal }) {
     if (brainless()) return planAlone(focus, query);
-    const filled = await fill({ tool: focus.tool, task: query }, { query, who, mem });
+    let filled;
+    try {
+      filled = await fill({ tool: focus.tool, task: query }, { query, who, mem });
+    } catch (err) {
+      if (signal?.aborted) throw err; // перебили — отмена идёт дальше
+      // Большая модель упала или не ответила вовремя, а инструмент уже известен — аргумент пишут правила
+      audit({ brain: 'ошибка в узком промпте', error: String(err?.message || err).slice(0, 200), input: query });
+      return planAlone(focus, query);
+    }
     if (!filled) return null;
     return { addressed: true, topic: focus.skill, actions: [filled.action], say: filled.say, focused: true };
   }
@@ -241,7 +266,9 @@ function createModelPlanner({ config, llm, skills, prompts, audit, cloud = null 
       return { ...first, streamed: true };
     }
     if (first.addressed === false) return first;
-    return (await firstOf(afterSpeech(), first, turn)) || first;
+    const final = (await firstOf(afterSpeech(), first, turn)) || first;
+    // Агента могли выбрать и при переспросе с подгруженным навыком — та же проверка и для итога
+    return (await notDevTask(final, turn)) || final;
   }
 
   return { plan: makePlan, planFocused, planAlone };

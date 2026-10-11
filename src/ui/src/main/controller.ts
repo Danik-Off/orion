@@ -56,6 +56,7 @@ export interface PanelState {
   buttons: PanelButton[];
   field: { placeholder?: string; value?: string; onEnter?: (v: string) => void } | null;
   modal: boolean;
+  onEscape?: () => void; // Esc — как эта кнопка («Позже»); без неё — просто закрыть
 }
 export interface SetupBar {
   title: string;
@@ -103,14 +104,15 @@ export interface Deps {
   createRadio: (o: { report: (s: { playing: boolean; active: boolean; name: string }) => void }) => Radio;
   playChime: (kind?: ChimeKind, volume?: number) => void;
   setQuiet: (fn: () => number) => void;
-  setLevel?: (level: number) => void; // громкость голоса 0..1 — куб «дышит» (CSS-переменная, мимо React)
+  setLevel?: (level: number) => void; // громкость голоса 0..1 — шар «дышит» (CSS-переменная, мимо React)
   hour?: () => number;
 }
 
 const LISTEN_MS = 8000; // сколько ждать НАЧАЛА фразы после «Орион» или горячей клавиши
 const HOLD_MS = 2500;
-const HOLO_OPEN_MS = 30;
-const HOLO_CLOSE_MS = 320;
+const MAX_MESSAGES = 200;
+const HOLO_OPEN_MS = 60; // окно успевает стать видимым (painted), анимация появления видна с начала
+const HOLO_CLOSE_MS = 440; // = длительность ухода в main.css (panel-out, beam-in reverse, вспышка шара)
 const tucked = (m: Mode) => m === 'hidden' || m === 'cube';
 
 export function createConversation(deps: Deps) {
@@ -169,6 +171,14 @@ export function createConversation(deps: Deps) {
   let followUp = false;
   let pendingConfirm: string | null = null;
   let pendingQuestion: string | null = null;
+  // Ядро ждёт ответа ограниченное время (app/services.js) и окну об этом не сообщает — снять вопрос и здесь,
+  // иначе следующая команда уйдёт как ответ на вопрос, которого уже нет
+  let confirmTimer: ReturnType<typeof setTimeout> | undefined;
+  let setupTimer: ReturnType<typeof setTimeout> | undefined;
+  let questionTimer: ReturnType<typeof setTimeout> | undefined;
+  // Напоминание или объявление, пока Орион думает или говорит, — после ответа, а не поверх него
+  const announceQueue: (() => void)[] = [];
+  let announceTimer: ReturnType<typeof setTimeout> | undefined;
   let talkingTo: string | null | undefined; // id человека, null — гость, undefined — разговора нет
   let ignoredInRow = 0;
   let wizard: Wizard | null = null;
@@ -223,7 +233,8 @@ export function createConversation(deps: Deps) {
 
   function addMsg(kind: MsgKind, text: string, sources?: LinkSource[], cards?: CardData[]): number {
     const id = ++msgSeq;
-    set({ messages: [...state.messages, { id, kind, text, sources, cards }], showHints: false });
+    // Лента не растёт без предела: окно может быть открыто днями
+    set({ messages: [...state.messages, { id, kind, text, sources, cards }].slice(-MAX_MESSAGES), showHints: false });
     return id;
   }
   const updateMsg = (id: number, patch: Partial<Message>) =>
@@ -232,7 +243,7 @@ export function createConversation(deps: Deps) {
     set({ messages: [], showHints: true, hints: hintsFor(hour()), holoCards: null });
   }
 
-  // --- голограмма в углу: появиться из куба, повисеть, пока читают, уйти обратно ---
+  // --- голограмма в углу: появиться из шара, повисеть, пока читают, уйти обратно ---
   function showOrbIfHidden() {
     cancelHoloClose();
     if (tucked(state.mode)) api.presence('orb');
@@ -258,6 +269,7 @@ export function createConversation(deps: Deps) {
   }
   function closeHolo() {
     if (state.holo === 'closing') return;
+    hovered = false;
     set({ holo: 'closing' });
     clearTimeout(holoTimer);
     holoTimer = setTimeout(() => {
@@ -275,6 +287,7 @@ export function createConversation(deps: Deps) {
 
   function onMode(m: Mode) {
     const was = state.mode;
+    hovered = false; // панель под мышью исчезла вместе с режимом — mouseleave уже не придёт
     set({ mode: m });
     if (tucked(m)) clearLog(); // окно скрыто — в следующий раз с чистого экрана
     if (m === 'orb') {
@@ -293,7 +306,7 @@ export function createConversation(deps: Deps) {
       set({ micOn: on });
       refreshState();
     },
-    // Куб «дышит» вместе с голосом, но только когда Орион действительно слушает
+    // Шар «дышит» вместе с голосом, но только когда Орион действительно слушает
     onLevel: (rms) => {
       const target = (isListening() || wizard) && !tucked(state.mode) ? Math.min(1, rms * 12) : 0;
       level = level * 0.5 + target * 0.5;
@@ -331,6 +344,7 @@ export function createConversation(deps: Deps) {
   function stopAll() {
     alarm.stop();
     followUp = false;
+    dropQuestions();
     if (busy) cancelThinking();
     interrupt({ end: true });
     endDialog();
@@ -377,9 +391,10 @@ export function createConversation(deps: Deps) {
       interrupt();
       if (busy) cancelThinking();
       bargingIn = false;
-      if (partial) return listen(LISTEN_MS, 'wake');
+      // Перебили одним «Орион» — слушать, и в свёрнутом виде это должно быть видно (голограмма «Слушаю»)
+      if (partial) return (showOrbIfHidden(), listen(LISTEN_MS, 'wake'));
       if (isStopForOrion({ command, speaking: true })) return stopAll();
-      if (!command) return listen(LISTEN_MS, 'wake');
+      if (!command) return (showOrbIfHidden(), listen(LISTEN_MS, 'wake'));
     }
     const listening = isListening();
 
@@ -431,7 +446,9 @@ export function createConversation(deps: Deps) {
         ? talkingTo
         : undefined;
     const sameVoice = source === 'followup' && voice && personId && personId === talkingTo;
-    void submit(text, sameVoice ? 'followup-voice' : source, personId);
+    // Имя было в этой же фразе — точно к Ориону; фраза после одинокого «Орион» — может быть и разговором рядом
+    const sent: Source = sameVoice ? 'followup-voice' : source === 'wake' && command === null ? 'wake-window' : source;
+    void submit(text, sent, personId);
   }
 
   // Команда проигрывателю без имени. Чужой записанный голос — не командует
@@ -652,6 +669,7 @@ export function createConversation(deps: Deps) {
     clearTimeout(heldTimer);
     held = null;
     api.cancel();
+    dropQuestions(); // подтверждение отменённого запроса больше не нужно
     finishAsk({ cancelled: true }, pending?.text || '', pending?.source || 'text');
   }
   function releaseHeld() {
@@ -705,21 +723,40 @@ export function createConversation(deps: Deps) {
   }
 
   // --- подтверждение и вопрос ---
-  function answerConfirm(ok: boolean) {
+  const CONFIRM_MS = 30_000; // как CONFIRM_TIMEOUT_MS в app/services.js
+  const QUESTION_MS = 60_000; // как timeoutMs вопроса в app/services.js
+  // Отказаться от всех вопросов: «стоп», отмена запроса. Ядру — «нет» и «пропустить»: оно перестаёт ждать
+  function dropQuestions() {
+    if (pendingConfirm) answerConfirm(false, { quiet: true });
+    if (pendingQuestion) answerQuestion(null);
+  }
+  function answerConfirm(ok: boolean, { quiet = false } = {}) {
     if (!pendingConfirm) return;
+    clearTimeout(confirmTimer);
     api.replyConfirm(pendingConfirm, ok);
     pendingConfirm = null;
     set({ confirm: null });
-    addMsg('muted', ok ? 'Подтверждено' : 'Отменено');
+    if (!quiet) addMsg('muted', ok ? 'Подтверждено' : 'Отменено');
     stopListening();
+    refreshState();
   }
   function onConfirm({ id, text }: { id: string; text: string }) {
     pendingConfirm = id;
+    clearTimeout(confirmTimer);
+    confirmTimer = setTimeout(() => {
+      if (pendingConfirm !== id) return;
+      pendingConfirm = null; // ядро уже решило «нет» само
+      set({ confirm: null });
+      addMsg('muted', 'Не дождался ответа — отменено');
+      refreshState();
+      scheduleOrbHide();
+    }, CONFIRM_MS);
     set({ confirm: { text }, caption: text });
     speak(`${text} Скажите «да» или «нет».`, { expectReply: true });
   }
   function answerQuestion(text: string | null) {
     if (!pendingQuestion) return;
+    clearTimeout(questionTimer);
     const t = typeof text === 'string' ? text.trim() : '';
     api.replyQuestion(pendingQuestion, t || null);
     pendingQuestion = null;
@@ -730,6 +767,12 @@ export function createConversation(deps: Deps) {
   function onQuestion({ id, text }: { id?: string; text?: string }) {
     if (!id) return;
     pendingQuestion = id;
+    clearTimeout(questionTimer);
+    questionTimer = setTimeout(() => {
+      if (pendingQuestion !== id) return;
+      pendingQuestion = null;
+      hidePanel();
+    }, QUESTION_MS);
     showPanel(
       text || '',
       [
@@ -742,8 +785,13 @@ export function createConversation(deps: Deps) {
   }
 
   // --- панель ---
-  function showPanel(text: string, buttons: PanelButton[], field: PanelState['field'] = null, { modal = false } = {}) {
-    set({ panel: { text, buttons, field, modal } });
+  function showPanel(
+    text: string,
+    buttons: PanelButton[],
+    field: PanelState['field'] = null,
+    { modal = false, onEscape }: { modal?: boolean; onEscape?: () => void } = {},
+  ) {
+    set({ panel: { text, buttons, field, modal, onEscape } });
   }
   const hidePanel = () => set({ panel: null });
 
@@ -790,15 +838,17 @@ export function createConversation(deps: Deps) {
       await refreshPeople();
       showPeople();
     };
-    showPanel(
-      `${p.name || 'Без имени'} — обращение «${p.honorific}».`,
-      [
-        { label: 'Сэр', run: () => void after(api.personUpdate(p.id, { honorific: 'сэр' })) },
-        { label: 'Мисс', run: () => void after(api.personUpdate(p.id, { honorific: 'мисс' })) },
-        { label: 'Переименовать', run: (value) => void after(api.personUpdate(p.id, { name: value })) },
-        { label: 'Перезаписать голос', run: () => void startWizard(p) },
+    // Пустое имя не сохраняем: человек без имени в списке — «без имени», и его не отличить
+    const rename = (value: string) => {
+      const name = String(value || '').trim();
+      if (!name || name === p.name) return;
+      void after(api.personUpdate(p.id, { name }));
+    };
+    const remove = () =>
+      showPanel(`Удалить голос «${p.name || 'без имени'}»? Я перестану узнавать этого человека.`, [
         {
           label: 'Удалить',
+          primary: true,
           run: () =>
             void after(
               api.personRemove(p.id).then(() => {
@@ -806,9 +856,19 @@ export function createConversation(deps: Deps) {
               }),
             ),
         },
+        { label: 'Отмена', run: () => editPerson(p) },
+      ]);
+    showPanel(
+      `${p.name || 'Без имени'} — обращение «${p.honorific}». Новое имя — в поле ниже.`,
+      [
+        { label: 'Сэр', run: () => void after(api.personUpdate(p.id, { honorific: 'сэр' })) },
+        { label: 'Мисс', run: () => void after(api.personUpdate(p.id, { honorific: 'мисс' })) },
+        { label: 'Переименовать', run: rename },
+        { label: 'Перезаписать голос', run: () => void startWizard(p) },
+        { label: 'Удалить', run: remove },
         { label: 'Назад', run: showPeople },
       ],
-      { placeholder: 'Новое имя', value: p.name },
+      { placeholder: 'Новое имя', value: p.name, onEnter: rename },
     );
   }
   async function startWizard(existing?: { id: string }) {
@@ -869,12 +929,32 @@ export function createConversation(deps: Deps) {
       { label: 'Отмена', run: cancelWizard },
     ]);
   }
+  let finishing = false; // «мисс» голосом и кнопка почти одновременно — сохранить один раз
   async function finishWizard(honorific: string) {
-    if (!wizard || wizard.stage === 'wake') return;
+    if (!wizard || wizard.stage === 'wake' || finishing) return;
+    finishing = true;
     api.setListening(false);
-    const person = await api.enrollFinish({ name: wizard.name || '', honorific, id: wizard.id });
+    const w = wizard;
+    let person;
+    try {
+      person = await api.enrollFinish({ name: w.name || '', honorific, id: w.id });
+    } catch (err) {
+      person = { error: String((err as Error)?.message || err) };
+    } finally {
+      finishing = false;
+    }
     wizard = null;
     await refreshPeople();
+    // Не сохранилось — так и сказать, а не «Готово»
+    if (!person?.id || person.error) {
+      showPanel(`Не получилось сохранить голос: ${person?.error || 'неизвестная ошибка'}.`, [
+        { label: 'Записать заново', primary: true, run: () => void startWizard() },
+        { label: 'Закрыть', run: hidePanel },
+      ]);
+      speak('Не получилось сохранить голос.');
+      refreshState();
+      return;
+    }
     if (person?.id) talkingTo = person.id;
     const details: string[] = [];
     if (person?.threshold) details.push(`порог узнавания ${person.threshold}`);
@@ -920,6 +1000,7 @@ export function createConversation(deps: Deps) {
     ]);
     refreshState();
   }
+  let adding = false;
   // Во время мастера всё услышанное — ответы мастеру
   async function wizardHeard(text: string) {
     const w = wizard;
@@ -932,7 +1013,9 @@ export function createConversation(deps: Deps) {
       return w.step >= w.needed ? finishWakeTuning() : promptWake();
     }
     if (w.stage === 'phrases') {
-      const r = await api.enrollAdd(w.phrases[w.step]);
+      if (adding) return; // две фразы подряд, пока первая ещё сохраняется — вторая подождёт следующего раза
+      adding = true;
+      const r = await api.enrollAdd(w.phrases[w.step]).finally(() => (adding = false));
       if (wizard !== w) return;
       if (r.error) return promptPhrase(`${r.error}.\n\n`);
       w.heard.push(r.heard);
@@ -961,12 +1044,32 @@ export function createConversation(deps: Deps) {
     refreshState();
   }
 
+  // Объявление — когда Орион свободен: поверх идущего ответа оно оборвало бы его (новая речь гасит старую)
+  function announce(run: () => void) {
+    announceQueue.push(run);
+    const flush = () => {
+      clearTimeout(announceTimer);
+      if (busy || speaking) {
+        announceTimer = setTimeout(flush, 400);
+        return;
+      }
+      announceQueue.splice(0).forEach((f) => f());
+    };
+    flush();
+  }
+
   // --- настройки и установка ---
   function configureVoice(s: AppSettings) {
     night = s.night || null;
     followUpMs = (s.followUpSeconds || 7) * 1000;
     echoCancellation = s.echoCancellation;
+    speaker.dispose?.(); // старый голос замолкает и отдаёт звук — иначе его «конец речи» сработал бы позже
     speaker = deps.createSpeaker({ ownVoice: s.tts, ...hooks });
+  }
+  // Голос или скорость поменяли в настройках — только голос: микрофон и строка состояния остаются как есть
+  async function reloadVoice() {
+    const s = await api.settings();
+    if (s) configureVoice(s);
   }
   async function applySettings() {
     const s = await api.settings();
@@ -1057,7 +1160,8 @@ export function createConversation(deps: Deps) {
         set({ setup: { title: `Не установлено: ${total}. Нажмите, чтобы скачать`, progress: 0, error: false, pending: true } });
       },
     });
-    showPanel(text.join('\n'), buttons, null, { modal: true });
+    // Esc — как «Позже»: иначе предложение закрылось бы без следа и вернуться к нему было бы неоткуда
+    showPanel(text.join('\n'), buttons, null, { modal: true, onEscape: buttons.at(-1)!.run as () => void });
   }
   function onBrainOffer({ size }: { size?: string }) {
     const text =
@@ -1069,18 +1173,24 @@ export function createConversation(deps: Deps) {
       api.brainAnswer(choice);
       if (choice === 'connect') api.openSettings('models');
     };
-    showPanel(text, [
-      { label: `Скачать (${size})`, primary: true, run: answer('download') },
-      { label: 'Подключить внешнюю', run: answer('connect') },
-      { label: 'Позже', run: answer('later') },
-      { label: 'Не предлагать', run: answer('never') },
-    ]);
+    showPanel(
+      text,
+      [
+        { label: `Скачать (${size})`, primary: true, run: answer('download') },
+        { label: 'Подключить внешнюю', run: answer('connect') },
+        { label: 'Позже', run: answer('later') },
+        { label: 'Не предлагать', run: answer('never') },
+      ],
+      null,
+      { onEscape: answer('later') }, // иначе ядро ждало бы ответа вечно
+    );
     if (state.voiceOn && !busy && !speaking) speak(text);
   }
   function onUpdate(r: SetupEvent) {
     const title = r.progress != null && !r.done && !r.error ? `${r.title} — ${Math.round(r.progress * 100)}%` : r.title || '';
     set({ setup: { title, progress: r.progress ?? 0, error: !!r.error, pending: false } });
-    if (r.done || r.error) setTimeout(() => !installing && set({ setup: null }), 6000);
+    clearTimeout(setupTimer); // новое обновление пошло — старый таймер его полоску не прячет
+    if (r.done || r.error) setupTimer = setTimeout(() => !installing && set({ setup: null }), 6000);
   }
 
   // --- подписка на ядро ---
@@ -1103,17 +1213,21 @@ export function createConversation(deps: Deps) {
     api.onConfirm(onConfirm);
     api.onQuestion(onQuestion);
     api.onEnrollOffer(() => !wizard && void startWizard());
-    api.onAnnounce((text) => {
-      addMsg('bot', text);
-      setCaption(text);
-      speak(text);
-    });
-    api.onRemind((text) => {
-      addMsg('bot', `Напоминание: ${text}`);
-      setCaption(`Напоминание: ${text}`);
-      deps.playChime('alarm');
-      setTimeout(() => speak(`Напоминаю: ${text}.`), 500);
-    });
+    api.onAnnounce((text) =>
+      announce(() => {
+        addMsg('bot', text);
+        setCaption(text);
+        speak(text);
+      }),
+    );
+    api.onRemind((text) =>
+      announce(() => {
+        addMsg('bot', `Напоминание: ${text}`);
+        setCaption(`Напоминание: ${text}`);
+        deps.playChime('alarm');
+        setTimeout(() => speak(`Напоминаю: ${text}.`), 500);
+      }),
+    );
     // Разговор забыт (тишина, другой собеседник): на экране остаётся приглушённым. Фраза нового запроса — нет
     api.onSessionEnd(() => {
       const keep = busy ? pending?.msg : null;
@@ -1130,6 +1244,7 @@ export function createConversation(deps: Deps) {
       }
     });
     api.onToggleMic(() => void toggleMic());
+    api.onTry?.((text) => actions.submitText(text)); // пример из «Что я умею» в настройках
     api.onPreviewVoice(() => {
       if (busy || speaking) return;
       previewing = true;
@@ -1139,10 +1254,11 @@ export function createConversation(deps: Deps) {
     api.onSettingsChanged((patch) => {
       for (const key of ['enabled', 'from', 'to', 'volume'] as const)
         if (`speech.night.${key}` in patch) night = { ...night, [key]: patch[`speech.night.${key}`] };
-      if ('speech.followUpSeconds' in patch) followUpMs = patch['speech.followUpSeconds'] * 1000;
+      const follow = Number(patch['speech.followUpSeconds']);
+      if (Number.isFinite(follow) && follow > 0) followUpMs = follow * 1000;
       if ('speech.speaker.require' in patch) voices = { ...voices, require: patch['speech.speaker.require'] };
       if ('ui.calm' in patch) set({ calm: patch['ui.calm'] === true });
-      if ('speech.ttsSpeaker' in patch || 'speech.ttsSpeed' in patch) void applySettings();
+      if ('speech.ttsSpeaker' in patch || 'speech.ttsSpeed' in patch) void reloadVoice();
     });
     api.onSetup((r) => void onSetup(r));
     api.onSetupOffer((offer) => {
@@ -1164,7 +1280,11 @@ export function createConversation(deps: Deps) {
   // --- действия окна (кнопки, поле ввода, клавиши) ---
   const actions = {
     submitText(text: string) {
+      if (!text.trim()) return; // пустой Enter — не «пропустить» вопрос
       if (pendingQuestion) return answerQuestion(text);
+      // Набрали «да» или «нет», пока ждём подтверждения, — это ответ, а не новый запрос
+      const yes = pendingConfirm ? confirmAnswer(text) : null;
+      if (typeof yes === 'boolean') return answerConfirm(yes);
       void submit(text, 'text');
     },
     hint: (text: string) => void submit(text, 'text'),
@@ -1194,7 +1314,7 @@ export function createConversation(deps: Deps) {
       await refreshPeople();
       showPeople();
     },
-    // Клик по кубу — «говорите»; в голограмме — развернуть окно
+    // Клик по шару — «говорите»; в голограмме — развернуть окно
     async core() {
       if (state.mode === 'orb') return api.presence('full');
       if (wizard) return;
@@ -1225,7 +1345,7 @@ export function createConversation(deps: Deps) {
     escape() {
       if (busy) return cancelThinking();
       if (speaking) return interrupt({ end: true });
-      if (state.panel) return wizard ? cancelWizard() : hidePanel();
+      if (state.panel) return wizard ? cancelWizard() : state.panel.onEscape ? state.panel.onEscape() : hidePanel();
       hideWindow();
     },
   };
@@ -1240,7 +1360,8 @@ export function createConversation(deps: Deps) {
     actions,
     // Погасить все таймеры (окно закрывается; тесты)
     dispose() {
-      for (const t of [listenTimer, hideTimer, holoTimer, heldTimer, speakWatch]) clearTimeout(t);
+      for (const t of [listenTimer, hideTimer, holoTimer, heldTimer, speakWatch, confirmTimer, questionTimer, announceTimer, setupTimer])
+        clearTimeout(t);
       alarm.stop({ silent: true });
       listeners.clear();
     },

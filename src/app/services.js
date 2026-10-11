@@ -1,5 +1,6 @@
 // Сборка ядра: журнал, память, языковые модели, навыки, ступени разбора и ассистент.
 // Здесь только связи между частями — логика живёт в src/core.
+const { createVision } = require('./vision');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -135,6 +136,7 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
         active: s?.active === true,
         name: String(s?.name || radioState.name),
         url: s?.active === false ? '' : radioState.url,
+        status: s?.status || 'idle', // мини-плеер: «Подключаюсь…», «Станция не отвечает»
       }),
   };
 
@@ -183,6 +185,8 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
     onSchedule: () => ui.send('jarvis:schedule', reminders.schedule()),
     perform: async () => '', // подменяется ниже, когда ассистент создан (сценарии выполняют фразы как команды)
   };
+  // Зрение: снимок экрана и вопрос к модели по картинке (только встроенная модель — снимок не уходит в сеть)
+  ctx.vision = createVision({ electron, config, llama, llm, audit });
   const skills = createSkillRegistry(allSkills, { config, ctx, audit });
   const router = createRouter({ config, server: routerServer, skills, audit, dataDir, alone: () => llm.available() === false });
   const cloud = createCloud({ config, confirm, audit });

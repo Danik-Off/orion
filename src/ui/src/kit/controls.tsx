@@ -46,10 +46,20 @@ export const Chip = ({ children, ...rest }: { children: ReactNode } & ButtonHTML
   </button>
 );
 
-export function Toggle({ checked, label, onChange }: { checked: boolean; label: string; onChange: (on: boolean) => void }) {
+export function Toggle({
+  checked,
+  label,
+  onChange,
+  disabled = false,
+}: {
+  checked: boolean;
+  label: string;
+  onChange: (on: boolean) => void;
+  disabled?: boolean;
+}) {
   return (
-    <label className="toggle" title={label}>
-      <input type="checkbox" checked={checked} aria-label={label} onChange={(e) => onChange(e.target.checked)} />
+    <label className={`toggle${disabled ? ' disabled' : ''}`} title={label}>
+      <input type="checkbox" checked={checked} disabled={disabled} aria-label={label} onChange={(e) => onChange(e.target.checked)} />
       <span />
     </label>
   );

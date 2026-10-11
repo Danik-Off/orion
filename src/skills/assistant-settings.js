@@ -1,6 +1,7 @@
 // Свои настройки голосом: «говори быстрее/медленнее», «смени голос», «голос номер три», «теперь тебя зовут Джарвис»,
 // «мой город Казань», «жди ответа дольше», «какие у тебя настройки». Пишет через тот же путь, что окно настроек
 // (проверка значений, оба окна узнают об изменении); имя меняет и слово отклика — после перезапуска.
+const { nameProblem } = require('../lib/names');
 const { wordsToNumber } = require('../lib/ru');
 const weather = require('./weather'); // weather.geocode — через объект: тест подменяет поиск города
 
@@ -49,7 +50,9 @@ function mySetting(arg, ctx) {
   }
   if (what === 'name') {
     const name = value.replace(/^./, (c) => c.toUpperCase());
-    if (!/^[А-ЯЁA-Z][а-яёa-z-]{1,19}$/.test(name)) return { ok: false, message: 'Какое имя мне взять, сэр?' };
+    if (!value) return { ok: false, message: 'Какое имя мне взять, сэр?' };
+    const problem = nameProblem(name);
+    if (problem) return { ok: false, message: `${problem} Имя остаётся прежним — ${ctx.config.name}.` };
     if (name === ctx.config.name) return { ok: true, speak: `Меня и так зовут ${name}.` };
     return save(ctx, { name }, `Теперь меня зовут ${name}, и откликаться буду на это имя.`);
   }
@@ -81,9 +84,12 @@ function mySetting(arg, ctx) {
   return { ok: false, message: 'Эту настройку голосом не поменять, она в окне настроек, сэр.' };
 }
 
-function quick(text) {
+function quick(text, ctx) {
   const t = norm(text);
   const plan = (arg) => ({ addressed: true, say: '', actions: [{ tool: 'my_setting', arg }] });
+  // «Как тебя зовут» — просто ответить, а не перечислять все настройки
+  if (/^(?:а )?(?:как тебя зовут|как твое имя|как тебя звать|кто ты такой|твое имя)$/.test(t) && ctx?.config?.name)
+    return { addressed: true, say: `Меня зовут ${ctx.config.name}.`, actions: [] };
   if (/^(?:говори|разговаривай|читай)(?: (?:чуть|немного|побольше|по))? (?:быстрее|побыстрее)$/.test(t)) return plan('speed faster');
   if (/^(?:говори|разговаривай|читай)(?: (?:чуть|немного|по))? (?:медленнее|помедленнее)$/.test(t)) return plan('speed slower');
   if (/^(?:смени|поменяй|другой|следующий)(?: (?:свой|мне))? голос$/.test(t)) return plan('voice next');

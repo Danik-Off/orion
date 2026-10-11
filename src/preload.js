@@ -26,6 +26,9 @@ contextBridge.exposeInMainWorld('jarvis', {
   backupImport: () => ipcRenderer.invoke('jarvis:backup-import'), // → после восстановления Орион перезапустится
   // Окно настроек — отдельное: открыть (page — раздел: models, voice…), перейти к разделу, прослушать голос
   openSettings: (page) => ipcRenderer.send('jarvis:open-settings', page ? String(page) : ''),
+  // «Что я умею» в настройках: пример нажали — окно разговора выполняет его как набранный текст
+  tryPhrase: (text) => ipcRenderer.send('jarvis:try', String(text || '').slice(0, 200)),
+  onTry: (cb) => ipcRenderer.on('jarvis:try', (_e, text) => cb(String(text || ''))),
   onSettingsPage: (cb) => ipcRenderer.on('jarvis:settings-page', (_e, page) => cb(String(page || ''))),
   previewVoice: () => ipcRenderer.send('jarvis:preview-voice'),
   onPreviewVoice: (cb) => ipcRenderer.on('jarvis:preview-voice', () => cb()),
@@ -40,6 +43,13 @@ contextBridge.exposeInMainWorld('jarvis', {
   orbPassthrough: (on) => ipcRenderer.send('jarvis:orb-passthrough', on === true), // клики мимо капсулы — программе под ней
   presence: (mode) => ipcRenderer.send('jarvis:presence', String(mode)), // 'full' | 'orb' | 'hidden' | 'collapse' (полное окно → плашка)
   orbHeight: (h) => ipcRenderer.send('jarvis:orb-height', Number(h) || 0), // сколько высоты нужно тексту в плашке
+  painted: (mode) => ipcRenderer.send('jarvis:painted', String(mode)), // окно нарисовало режим — можно показать
+  // Точка состояния на кнопке в панели задач: PNG (data:) или null
+  taskbarState: (icon, label) =>
+    ipcRenderer.send('jarvis:taskbar-state', {
+      icon: typeof icon === 'string' ? icon.slice(0, 20_000) : null,
+      label: String(label || '').slice(0, 60),
+    }),
   // Вопрос со свободным ответом (знакомство) и мастер записи голоса по просьбе ядра
   onQuestion: (cb) => ipcRenderer.on('jarvis:question', (_e, msg) => cb(msg && typeof msg === 'object' ? msg : {})),
   replyQuestion: (id, text) =>
@@ -136,6 +146,7 @@ contextBridge.exposeInMainWorld('jarvis', {
       playing: state?.playing === true,
       active: state?.active === true,
       name: String(state?.name || '').slice(0, 120),
+      status: ['idle', 'loading', 'playing', 'paused', 'error'].includes(state?.status) ? state.status : 'idle',
     }),
   // Мини-плеер радио: что играет ({ playing, active, name, song, volume, corner }) и кнопки
   onRadioPlayer: (cb) => ipcRenderer.on('jarvis:radio-player', (_e, s) => cb(s && typeof s === 'object' ? s : {})),

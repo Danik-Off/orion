@@ -30,25 +30,27 @@ export function useNow(active = true): number {
 }
 
 export function WeatherCard({ card, compact = false }: { card: WeatherCardData; compact?: boolean }) {
-  const days = (card.days || []).slice(0, compact ? 3 : 4);
+  // Данные от навыка могут прийти неполными — карточка рисует, что есть, и не роняет окно
+  const days = (Array.isArray(card.days) ? card.days : []).filter((d) => d && typeof d === 'object').slice(0, compact ? 3 : 4);
+  const now = card.now && Number.isFinite(card.now.temp) ? card.now : null;
   return (
     <div className="card card-weather">
       <Label>◆ Погода · {card.city}</Label>
-      {card.now && (
+      {now && (
         <div className="w-now">
-          <Icon name={WEATHER_ICONS[card.now.icon] || 'cloud'} size={compact ? 36 : 44} className="w-icon" />
-          <span className="num-big">{degreesText(card.now.temp)}</span>
+          <Icon name={WEATHER_ICONS[now.icon] || 'cloud'} size={compact ? 36 : 44} className="w-icon" />
+          <span className="num-big">{degreesText(now.temp)}</span>
           <span className="w-meta">
-            <b>{card.now.desc}</b>
-            {card.now.feels != null && <span>ощущается {degreesText(card.now.feels)}</span>}
-            {card.now.wind != null && <span>ветер {card.now.wind} м/с</span>}
+            <b>{now.desc}</b>
+            {now.feels != null && <span>ощущается {degreesText(now.feels)}</span>}
+            {now.wind != null && <span>ветер {now.wind} м/с</span>}
           </span>
         </div>
       )}
       {days.length > 0 && (
         <div className="w-days">
-          {days.map((d) => (
-            <div key={d.label} className="w-day" title={d.desc || ''}>
+          {days.map((d, i) => (
+            <div key={`${d.label}-${i}`} className="w-day" title={d.desc || ''}>
               <span className="w-day-label">{d.label}</span>
               <Icon name={WEATHER_ICONS[d.icon] || 'cloud'} size={20} />
               <span className="w-day-temp">

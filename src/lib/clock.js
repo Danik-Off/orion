@@ -1,6 +1,8 @@
 // Время из речи для будильника: распознаватель пишет числа словами, и «семь тридцать» — это 7:30, а не 37
 // (общий перевод слов в число складывает их). Понимает: «7:30», «в 7», «семь тридцать», «шесть сорок пять»,
-// «в половине восьмого» (7:30), «в восемь вечера» (20:00), «в двенадцать дня», «в час ночи».
+// «в половине восьмого» (7:30), «в восемь вечера» (20:00), «в двенадцать дня», «в час ночи»,
+// «в шесть часов тридцать минут», «без пятнадцати семь» (6:45), «без четверти восемь», «четверть восьмого» (7:15),
+// «двадцать минут восьмого» (7:20), «в полдень», «в полночь».
 // → { h, m } или null.
 const UNITS = {
   ноль: 0,
@@ -46,6 +48,34 @@ const ORDINAL = {
   двенадцатого: 12,
 };
 
+// «пятнадцати», «десяти», «двадцати пяти» → «пятнадцать», «десять», «двадцать пять» (после «без»)
+const GENITIVE = {
+  одной: 'один',
+  двух: 'два',
+  трех: 'три',
+  четырех: 'четыре',
+  пяти: 'пять',
+  шести: 'шесть',
+  семи: 'семь',
+  восьми: 'восемь',
+  девяти: 'девять',
+  десяти: 'десять',
+  одиннадцати: 'одиннадцать',
+  двенадцати: 'двенадцать',
+  тринадцати: 'тринадцать',
+  четырнадцати: 'четырнадцать',
+  пятнадцати: 'пятнадцать',
+  шестнадцати: 'шестнадцать',
+  семнадцати: 'семнадцать',
+  восемнадцати: 'восемнадцать',
+  девятнадцати: 'девятнадцать',
+  двадцати: 'двадцать',
+  тридцати: 'тридцать',
+  сорока: 'сорок',
+  пятидесяти: 'пятьдесят',
+};
+const genitiveToNominative = (w) => GENITIVE[w] || w;
+
 // Число из слов, начиная с i: «двадцать три» → 23 (2 слова), «сорок» → 40; → [число, сколько слов] или null
 function numberAt(words, i) {
   const w = words[i];
@@ -75,6 +105,34 @@ function parseClock(text) {
   const evening = words.includes('вечера') || words.includes('дня');
   const night = words.includes('ночи');
   if (words.includes('через')) return null; // «через десять минут» — не время на часах
+  const late = (h) => (evening && h < 12 ? h + 12 : h);
+
+  if (words.includes('полдень')) return { h: 12, m: 0 };
+  if (words.includes('полночь')) return { h: 0, m: 0 };
+
+  // «без пятнадцати семь», «без четверти восемь», «без десяти минут девять» → час раньше, минуты до часа
+  const without = words.indexOf('без');
+  if (without >= 0) {
+    let i = without + 1;
+    let before = null;
+    if (words[i] === 'четверти') [before, i] = [15, i + 1];
+    else {
+      const n = numberAt(words, i) || numberAt(words.map(genitiveToNominative), i);
+      if (n) [before, i] = [n[0], i + n[1]];
+    }
+    if (['минут', 'минуты', 'минуту', 'минуты'].includes(words[i])) i += 1;
+    const hour = numberAt(words, i);
+    if (before && before < 60 && hour && hour[0] >= 1 && hour[0] <= 24) return { h: late((hour[0] + 23) % 24), m: 60 - before };
+  }
+
+  // «четверть восьмого» → 7:15; «двадцать минут восьмого» → 7:20 (идёт восьмой час)
+  const quarter = words.indexOf('четверть');
+  if (quarter >= 0 && words[quarter + 1] in ORDINAL) return { h: late(ORDINAL[words[quarter + 1]] - 1), m: 15 };
+  const past = words.findIndex((w, i) => /^минут/.test(w) && words[i + 1] in ORDINAL);
+  if (past > 0) {
+    const n = numberAt(words, past - 2) && numberAt(words, past - 2)[1] === 2 ? numberAt(words, past - 2) : numberAt(words, past - 1);
+    if (n && n[0] < 60) return { h: late(ORDINAL[words[past + 1]] - 1), m: n[0] };
+  }
 
   // «в половине восьмого» → 7:30
   const half = words.indexOf('половине');
@@ -91,11 +149,16 @@ function parseClock(text) {
   const hour = numberAt(words, start);
   if (!hour || hour[0] > 23) return null;
   let h = hour[0];
-  const minute = numberAt(words, start + hour[1]);
-  let m = minute && minute[0] <= 59 && !['минут', 'минуты', 'минуту'].includes(words[start + hour[1] + minute[1]]) ? minute[0] : 0;
-  if (words[start + hour[1]] === 'ноль' && minute) {
+  // «в шесть часов тридцать минут»: после часа — слово «часов», минуты — за ним, и «минут» им не мешает
+  let at = start + hour[1];
+  const hours = /^час(?:а|ов)?$/.test(words[at] || '');
+  if (hours) at += 1;
+  const minute = numberAt(words, at);
+  const minutesWord = ['минут', 'минуты', 'минуту'].includes(words[at + (minute?.[1] || 0)]);
+  let m = minute && minute[0] <= 59 && (hours || !minutesWord) ? minute[0] : 0;
+  if (words[at] === 'ноль' && minute) {
     // «семь ноль пять» → 7:05
-    const after = numberAt(words, start + hour[1] + 1);
+    const after = numberAt(words, at + 1);
     m = after && after[0] < 10 ? after[0] : 0;
   }
   if (evening && h < 12) h += 12;

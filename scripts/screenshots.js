@@ -379,7 +379,7 @@ const SCENES = [
           `o.debugSet({ core: 'error', caption: 'Нет связи с интернетом. Таймеры, будильник и громкость работают и без сети.' });`,
         ),
         {
-          file: 'orb-0-cube.png',
+          file: 'orb-0-sphere.png',
           desktop: true,
           size: { width: 64, height: 64 },
           script: `${BASE} o.debugSet({ mode: 'cube', core: 'idle' });`,
@@ -392,6 +392,17 @@ const SCENES = [
           size: { width: 380, height: 64 },
           script: `demo.emit('radioPlayer', { playing: true, name: 'Радио Маяк', song: 'Кино — Группа крови', volume: 0.7 });`,
         },
+        ...[
+          ['orb-9b-radio-loading.png', `{ playing: false, active: true, status: 'loading', name: 'Европа Плюс', volume: 0.7 }`],
+          ['orb-9c-radio-error.png', `{ playing: false, active: true, status: 'error', name: 'Европа Плюс', volume: 0.7 }`],
+        ].map(([file, state]) => ({
+          file, // мини-плеер: подключается и станция не отвечает
+          page: 'settings',
+          html: path.join(root, 'src', 'ui', 'dist', 'radio-player.html'),
+          desktop: true,
+          size: { width: 380, height: 64 },
+          script: `demo.emit('radioPlayer', ${state});`,
+        })),
       ]
     : []),
 ];
@@ -402,6 +413,7 @@ function orbScene(file, script) {
     file,
     desktop: true,
     size: ORB,
+    wait: 1100, // голограмма разворачивается ~0,8 с
     script: `${BASE}
       o.debugSet({ mode: 'orb', holo: 'open' });
       ${script}`,

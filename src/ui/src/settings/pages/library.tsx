@@ -3,7 +3,7 @@
 // и движок llama.cpp: версия, обновление, откат. Ход загрузок приходит от ядра сам (onModelsChanged).
 import { useEffect, useState } from 'react';
 import type { Ctx, Page } from '../rows.ts';
-import { Line, Section, useActions } from '../Row.tsx';
+import { Line, LoadState, Section, useActions } from '../Row.tsx';
 import { Button, Progress, TextField } from '../../kit/controls.tsx';
 
 interface Model {
@@ -46,12 +46,18 @@ function Library({ ctx }: { ctx: Ctx }) {
   const [link, setLink] = useState('');
   const { button, error } = useActions<Data>((r) => r && 'models' in r && setData(r));
 
+  const [failed, setFailed] = useState('');
+  const load = () => {
+    setFailed('');
+    api.modelsList().then(setData, (err: unknown) => setFailed(String((err as Error)?.message || err)));
+  };
   useEffect(() => {
     const off = api.onModelsChanged?.((r) => setData(r));
-    void api.modelsList().then(setData);
+    load();
     return () => off?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- загрузка одна на открытие раздела
   }, [api]);
-  if (!data) return null;
+  if (!data) return <LoadState failed={failed} retry={load} />;
 
   const row = (m: Model) => {
     const err = m.error || error(`use:${m.id}`, `remove:${m.id}`, `get:${m.id}`);
@@ -82,7 +88,14 @@ function Library({ ctx }: { ctx: Ctx }) {
         ) : m.installed ? (
           <>
             {button(`use:${m.id}`, 'Использовать', 'Переключаю…', () => api.modelsUse(m.id), true)}
-            {button(`remove:${m.id}`, 'Удалить', 'Удаляю…', () => api.modelsRemove(m.id))}
+            {button(
+              `remove:${m.id}`,
+              'Удалить',
+              'Удаляю…',
+              () => api.modelsRemove(m.id),
+              false,
+              `Точно удалить${m.size ? ` (${m.size})` : ''}?`,
+            )}
           </>
         ) : (
           button(`get:${m.id}`, 'Скачать', 'Начинаю…', () => api.modelsDownload(m.id), true)

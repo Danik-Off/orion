@@ -354,3 +354,25 @@
   margin-top: 24px;
   color: var(--text-2);
 }
+
+/* Раздел загружается или не загрузился */
+.page-state {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 28px 4px;
+  color: var(--text-2);
+}
+
+/* «Что я умею»: примеры фразами — нажать и попробовать */
+.help-phrases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 16px;
+}
+.help-note {
+  margin-top: 6px;
+  max-width: 70ch;
+  line-height: 1.55;
+}

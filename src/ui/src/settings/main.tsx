@@ -13,16 +13,18 @@ import { about, advanced, general, hearing, models, skills, voice } from './page
 import { components } from './pages/components.tsx';
 import { library } from './pages/library.tsx';
 import { connections } from './pages/connections.tsx';
-import { Cube } from '../kit/Cube.tsx';
+import { help } from './pages/help.tsx';
+import { Sphere } from '../kit/Sphere.tsx';
 import { Icon, type IconName } from '../kit/Icon.tsx';
 import { Button } from '../kit/controls.tsx';
+import { ErrorBoundary } from '../kit/ErrorBoundary.tsx';
 
 const GROUPS = [
   { id: 'assistant', title: 'Ассистент' },
   { id: 'brain', title: 'Интеллект' },
   { id: 'system', title: 'Система' },
 ] as const;
-const PAGES: Page[] = [general, voice, hearing, models, library, connections, skills, advanced, components, about];
+const PAGES: Page[] = [help, general, voice, hearing, models, library, connections, skills, advanced, components, about];
 
 // Совпадение — по началу слов: «ключ» находит «Ключ API», но не «вклЮЧать»
 const wordsOf = (text: string) =>
@@ -33,6 +35,7 @@ const wordsOf = (text: string) =>
     .filter(Boolean);
 const matcher = (query: string) => {
   const want = wordsOf(query);
+  if (!want.length) return null; // одни знаки препинания — это не поиск
   return (text: string) => {
     const have = wordsOf(text);
     return want.every((w) => have.some((h) => h.startsWith(w)));
@@ -81,12 +84,23 @@ function App({ ctx }: { ctx: Ctx }) {
 
   const page = PAGES.find((p) => p.id === pageId) || PAGES[0];
   const found = useMemo(() => {
-    if (!query.trim()) return null;
     const matches = matcher(query);
+    if (!matches) return null;
     return PAGES.map((p) => {
       const pageMatch = matches(`${p.title} ${p.keywords || ''}`);
       if (p.Render) return pageMatch ? { page: p, rows: null } : null;
-      const rows = (p.sections || []).flatMap((sec) => rowsOf(sec, s));
+      // Только то, что сейчас видно на странице: скрытые разделы и строки (when) не ищутся, одна настройка — один раз
+      const seen = new Set<string>();
+      const rows = (p.sections || [])
+        .filter((sec) => !sec.when || sec.when(s.values, s))
+        .flatMap((sec) => rowsOf(sec, s))
+        .filter((row) => !row.when || row.when(s.values, s))
+        .filter((row) => {
+          const key = 'key' in row ? row.key : row.label;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
       const hit = pageMatch ? rows : rows.filter((row) => matches(searchText(row)));
       return hit.length ? { page: p, rows: hit } : null;
     }).filter(Boolean) as { page: Page; rows: ReturnType<typeof rowsOf> | null }[];
@@ -96,7 +110,7 @@ function App({ ctx }: { ctx: Ctx }) {
     <div className={`settings${s.values['ui.calm'] === true ? ' calm' : ''}`}>
       <span className="settings-scan" aria-hidden="true" />
       <header className="titlebar">
-        <Cube size={16} spin={10} />
+        <Sphere size={16} spin={10} />
         <span className="titlebar-text">{`${s.values.name || 'Орион'} — настройки`}</span>
       </header>
       <div className="layout">
@@ -146,7 +160,18 @@ function App({ ctx }: { ctx: Ctx }) {
               {s.error}
             </div>
           )}
-          {found ? (
+          {!s.loaded ? (
+            <div className="page-state" role="status">
+              {s.loadError ? (
+                <>
+                  <span>Не удалось загрузить настройки: {s.loadError}</span>
+                  <Button onClick={() => void ctx.store.load()}>Повторить</Button>
+                </>
+              ) : (
+                <span>Загружаю…</span>
+              )}
+            </div>
+          ) : found ? (
             <>
               <div className="page-head">
                 <h1>Поиск</h1>
@@ -193,7 +218,9 @@ const store = createStore(api());
 const ctx: Ctx = { api: api(), store };
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App ctx={ctx} />
+    <ErrorBoundary title="настройки">
+      <App ctx={ctx} />
+    </ErrorBoundary>
   </StrictMode>,
 );
 void store.load();

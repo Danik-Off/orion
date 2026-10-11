@@ -1,4 +1,4 @@
-/* Окно разговора: полное (400 × 620), голограмма в углу (440 × по содержимому), свёрнутый куб (64 × 64) */
+/* Окно разговора: полное (400 × 620), голограмма в углу (440 × по содержимому), свёрнутый шар (64 × 64) */
 
 /* =================================== Полное окно =================================== */
 .full {
@@ -12,7 +12,7 @@
   border: 1px solid rgba(var(--holo), 0.35);
   box-shadow: inset 0 0 40px rgba(var(--holo), 0.05);
   overflow: hidden;
-  transition: border-color 0.3s;
+  transition: var(--tone-shift); /* .full сам несёт цвет состояния */
 }
 .full-scan {
   position: absolute;
@@ -96,7 +96,7 @@
   color: rgb(var(--holo)) !important;
 }
 
-/* Куб и табло: на пустом экране — крупно по центру, в разговоре — строкой над лентой */
+/* Шар и табло: на пустом экране — крупно по центру, в разговоре — строкой над лентой */
 .stage {
   display: flex;
   flex-direction: column;
@@ -119,13 +119,13 @@
   text-align: left;
   border-bottom: 1px dashed rgba(var(--holo), 0.25);
 }
-.stage-cube {
+.stage-sphere {
   display: grid;
   place-items: center;
   padding: 18px;
   border-radius: 50%;
 }
-.stage-row .stage-cube {
+.stage-row .stage-sphere {
   padding: 8px;
 }
 .stage-text {
@@ -420,16 +420,17 @@
 }
 
 /* Запланировано */
+/* Запланированное — в две строки; больше — тонкая прокрутка (колесом мыши, как обычно) */
 .schedule {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin: 0 16px 8px;
-  overflow-x: auto;
-  scrollbar-width: none;
+  max-height: 76px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(var(--holo), 0.4) transparent;
   flex-shrink: 0;
-}
-.schedule::-webkit-scrollbar {
-  display: none;
 }
 
 /* Строка ввода — как командная строка */
@@ -489,38 +490,95 @@
   position: relative;
   height: 100%;
 }
-/* Сцена: луч из куба и панель над ним; окно подстраивает высоту под сцену */
+/* Сцена: шар в углу (центр — в 32 px от правого и нижнего края окна, как у свёрнутого шара), над ним — панель,
+   между ними — конус света от шара к нижнему краю панели. Окно подстраивает высоту под панель */
 .orb-stage {
   position: absolute;
-  right: 36px;
-  bottom: 36px;
-  padding: 0 34px 24px 0;
+  right: 12px;
+  bottom: 84px;
 }
 .orb-beam {
   position: absolute;
-  inset: 0;
-  clip-path: polygon(100% 100%, 0 0, 0 calc(100% - 24px));
-  background: linear-gradient(315deg, rgba(var(--holo), 0.38), rgba(var(--holo), 0.14) 45%, rgba(var(--holo), 0));
-  filter: blur(1px);
+  right: 12px;
+  bottom: 32px;
+  width: 340px;
+  height: 52px;
+  /* вершина конуса — центр шара (в 20 px от правого края панели) */
+  clip-path: polygon(calc(100% - 20px) 100%, 0 0, 100% 0);
+  transform-origin: calc(100% - 20px) 100%;
+  background:
+    linear-gradient(0deg, rgba(var(--holo), 0.55), rgba(var(--holo), 0.1) 55%, rgba(var(--holo), 0.24)),
+    /* лучи сходятся в шар */
+    repeating-conic-gradient(from 270deg at calc(100% - 20px) 100%, rgba(var(--holo), 0.16) 0 0.5deg, transparent 0.5deg 4deg);
+  mix-blend-mode: screen;
   animation: beam 2.4s ease-in-out infinite;
   pointer-events: none;
-  transition: opacity 0.25s;
 }
 .orb-panel {
   width: 340px;
-  transform: perspective(900px) rotateY(-8deg) rotateX(2deg);
-  transform-origin: 100% 100%;
-  transition:
-    transform 0.4s cubic-bezier(0.2, 0.9, 0.25, 1),
-    opacity 0.25s,
-    filter 0.3s;
   cursor: pointer;
 }
+/* Куда падает свет: яркая кромка по низу панели */
+.orb-panel::after {
+  content: '';
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  bottom: -1px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgb(var(--holo)) 30%, #fff 80%, rgb(var(--holo)) 92%, transparent);
+  box-shadow: 0 0 12px rgba(var(--holo), 0.9);
+  pointer-events: none;
+}
+/* Строка развёртки: бежит по краю разворачивающейся панели (видна только в движении) */
+.orb-panel::before {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  left: -1px;
+  right: -1px;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #fff 15%, #fff 85%, transparent);
+  box-shadow:
+    0 0 10px rgb(var(--holo)),
+    0 0 24px rgba(var(--holo), 0.8);
+  opacity: 0;
+  pointer-events: none;
+}
+/* Высоту панели задаёт CornerWindow по содержимому; переход — RESIZE_MS. Содержимое прижато к низу:
+   пока панель сжимается, лишнее уходит за верхний край, а не наезжает на луч */
+.orb-panel {
+  transition:
+    var(--tone-shift),
+    height 0.3s cubic-bezier(0.3, 0.7, 0.3, 1);
+}
 .orb-panel > .holo-body {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+  padding: 12px 14px 14px 16px;
+}
+.orb-content {
+  flex: none;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px 14px 14px 16px;
+}
+/* Сменилось состояние или ответ — подпись и текст проявляются заново */
+.swap {
+  animation: swap-in 0.24s ease-out;
+}
+@keyframes swap-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+.calm .swap {
+  animation: none;
 }
 .orb-head {
   display: flex;
@@ -578,37 +636,184 @@
 .orb-follow .follow-bar {
   max-width: none;
 }
-.orb-cube {
+.orb-sphere {
   position: absolute;
-  right: 18px;
-  bottom: 18px;
-  width: 40px;
-  height: 40px;
+  right: 8px;
+  bottom: 8px;
+  width: 48px;
+  height: 48px;
   display: grid;
   place-items: center;
 }
-/* Появление: панель вырастает из куба по лучу; уход — обратно в куб */
-.holo-seed .orb-panel,
-.holo-closing .orb-panel {
-  opacity: 0;
-  transform: perspective(900px) rotateY(-8deg) rotateX(2deg) scale(0.35);
-  filter: blur(8px);
+/* Свёрнутый шар живёт в окне 64 × 64: сияние обычного размера (−45%) вылезало за окно, и его срезанные края
+   рисовали квадрат — он мигал в такт голосу, пока Орион слушает. Здесь сияние — круг внутри окна, к краю гаснет */
+.orb:not(.orb-open) .sph-halo {
+  inset: -10%;
+  background: radial-gradient(circle closest-side, rgba(var(--holo), calc(0.22 + var(--lvl) * 0.35)), transparent 85%);
 }
-.holo-seed .orb-beam,
-.holo-closing .orb-beam {
-  opacity: 0;
+.orb:not(.orb-open) .orb-sphere:hover .sph-halo {
+  background: radial-gradient(circle closest-side, rgba(var(--holo), 0.55), transparent 85%);
 }
 
-/* ============================ Свёрнутый куб (cube) ============================ */
-.cube-only {
-  width: 100%;
-  height: 100%;
-  display: grid;
-  place-items: center;
-  background: transparent;
+/* ============================ Появление и уход голограммы ============================
+   Появление (holo-open, ~0,6 с): шар вспыхивает → луч выдвигается из шара → в месте удара света
+   из точки у шара растягивается черта → из черты вверх разворачивается панель (по краю бежит строка
+   развёртки) → проступает текст. Уход (holo-closing, 0,44 с — HOLO_CLOSE_MS в controller.ts):
+   текст гаснет → панель складывается в черту → черта стягивается к шару → луч уходит в шар → шар вспыхивает.
+   Только clip-path, transform, opacity и filter: текст не перерисовывается и не размывается. */
+.holo-seed .orb-panel,
+.holo-seed .orb-beam {
+  opacity: 0;
 }
-.cube-only:hover .cube-halo {
-  background: radial-gradient(circle, rgba(var(--holo), 0.55), transparent 60%);
+.holo-open .orb-sphere {
+  animation: sphere-flare 0.5s ease-out;
+}
+.holo-open .orb-beam {
+  animation:
+    beam-in 0.16s cubic-bezier(0.3, 0.7, 0.3, 1) 0.02s both,
+    beam 2.4s ease-in-out 0.3s infinite;
+}
+.holo-open .orb-panel {
+  animation: panel-in 0.36s cubic-bezier(0.55, 0, 0.25, 1) 0.1s both;
+}
+.holo-open .orb-panel::before {
+  animation: scan-up 0.36s cubic-bezier(0.55, 0, 0.25, 1) 0.1s both;
+}
+.holo-open .orb-panel > .holo-body {
+  animation: content-in 0.24s linear 0.36s both;
+}
+.holo-closing .orb-panel > .holo-body {
+  animation: content-in 0.12s linear reverse both;
+}
+.holo-closing .orb-panel {
+  animation: panel-out 0.3s cubic-bezier(0.55, 0, 0.45, 1) 0.06s both;
+}
+.holo-closing .orb-panel::before {
+  animation: scan-up 0.3s cubic-bezier(0.55, 0, 0.45, 1) 0.06s reverse both;
+}
+.holo-closing .orb-beam {
+  animation: beam-in 0.14s ease-in 0.3s reverse both;
+}
+.holo-closing .orb-sphere {
+  animation: sphere-flare 0.3s ease-out 0.36s;
+}
+@keyframes sphere-flare {
+  0%,
+  100% {
+    filter: none;
+  }
+  30% {
+    filter: brightness(1.9) drop-shadow(0 0 10px rgb(var(--holo)));
+  }
+}
+@keyframes beam-in {
+  from {
+    transform: scale(0);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+/* inset: сверху, справа, снизу, слева; −40px — простор для свечения и уголков рамки */
+@keyframes panel-in {
+  0% {
+    clip-path: inset(calc(100% - 2px) 20px -16px calc(100% - 20px));
+    filter: brightness(2.2);
+  }
+  32% {
+    clip-path: inset(calc(100% - 2px) -40px -16px -40px);
+    filter: brightness(2.2);
+  }
+  100% {
+    clip-path: inset(-40px);
+    filter: none;
+  }
+}
+@keyframes panel-out {
+  0% {
+    clip-path: inset(-40px);
+    filter: none;
+  }
+  62% {
+    clip-path: inset(calc(100% - 2px) -40px -16px -40px);
+    filter: brightness(2);
+  }
+  100% {
+    clip-path: inset(calc(100% - 2px) 20px -16px calc(100% - 20px));
+    filter: brightness(2);
+  }
+}
+/* Строка развёртки идёт за краем панели: те же доли времени, что у panel-in */
+@keyframes scan-up {
+  0%,
+  32% {
+    bottom: 0;
+    opacity: 0;
+  }
+  36% {
+    opacity: 1;
+  }
+  92% {
+    bottom: calc(100% - 2px);
+    opacity: 1;
+  }
+  100% {
+    bottom: calc(100% - 2px);
+    opacity: 0;
+  }
+}
+@keyframes content-in {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  40% {
+    opacity: 0.8;
+  }
+  55% {
+    opacity: 0.35;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* Спокойный режим: панель и луч просто проявляются и гаснут */
+.calm.holo-open .orb-panel,
+.calm.holo-open .orb-beam,
+.calm.holo-open .orb-panel > .holo-body {
+  animation: fade-in 0.25s ease-out both;
+}
+.calm.holo-closing .orb-panel,
+.calm.holo-closing .orb-beam {
+  animation: fade-in 0.3s ease-in reverse both;
+}
+.calm .orb-sphere,
+.calm .orb-panel::before {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .holo-open .orb-panel,
+  .holo-open .orb-beam,
+  .holo-open .orb-panel > .holo-body {
+    animation: fade-in 0.25s ease-out both;
+  }
+  .holo-closing .orb-panel,
+  .holo-closing .orb-beam {
+    animation: fade-in 0.3s ease-in reverse both;
+  }
+  .orb-sphere,
+  .orb-panel::before {
+    animation: none !important;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* ================================ Общие движения ================================ */
@@ -656,4 +861,12 @@
   .orb-beam {
     animation: none;
   }
+}
+
+/* Длинная ссылка или слово без пробелов переносится, а не растягивает ленту и панели вбок */
+.msg-text,
+.stage-caption,
+.orb-caption,
+.panel-text {
+  overflow-wrap: anywhere;
 }

@@ -28,16 +28,29 @@ const split = (arg) => {
   const i = String(arg).indexOf('|');
   return i < 0 ? [DEFAULT_LIST, String(arg)] : [listName(arg.slice(0, i)), arg.slice(i + 1)];
 };
+// Пункты: через «;», запятую или «и» — «молоко, хлеб и сыр» → три пункта
 const items = (text) =>
   text
-    .split(/[;\n]|,\s*(?=\S)/)
+    .split(/[;\n]|,\s*(?=\S)|\s+и\s+/)
     .map((s) => s.trim())
     .filter(Boolean)
     .map((s) => s.slice(0, 200));
 
-function add(arg) {
+// Запятые сказанной фразы, которые потерялись по дороге: «молоко, хлеб» пришло как «молоко хлеб» —
+// если в исходной фразе эти слова разделяла запятая, это два пункта
+function splitByPhrase(item, phrase) {
+  const words = item.toLowerCase().split(/\s+/);
+  if (words.length < 2 || !phrase) return [item];
+  const raw = String(phrase).toLowerCase().replace(/ё/g, 'е');
+  const re = new RegExp(words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\s,]+'));
+  const span = raw.match(re)?.[0];
+  if (!span) return [item];
+  return span.includes(',') ? span.split(/\s*,\s*/).filter(Boolean) : [item];
+}
+
+function add(arg, request = {}) {
   const [name, text] = split(arg);
-  const added = items(text);
+  const added = items(text).flatMap((it) => splitByPhrase(it, request.text));
   if (!added.length) return { ok: false, message: 'Что записать, сэр?' };
   const lists = store.get().lists;
   const list = (lists[name] ||= []);
@@ -68,9 +81,15 @@ function remove(arg) {
     store.save();
     return { ok: true, speak: `Список «${name}» очищен.` };
   }
-  const drop = items(what)
-    .map((w) => list.findIndex((x) => x.toLowerCase().includes(w)))
-    .filter((i) => i >= 0);
+  // «хлеб и молоко», «хлебушек» — по основе слова: пункт «хлеб» найдётся и по «хлеба»
+  const stem = (w) => (w.length > 4 ? w.slice(0, w.length - 2) : w);
+  const drop = [
+    ...new Set(
+      items(what)
+        .map((w) => list.findIndex((x) => x.toLowerCase().includes(w) || x.toLowerCase().includes(stem(w))))
+        .filter((i) => i >= 0),
+    ),
+  ];
   if (!drop.length) return { ok: false, message: `В списке «${name}» такого нет, сэр.` };
   const removed = drop.map((i) => list[i]);
   lists[name] = list.filter((_, i) => !drop.includes(i));
@@ -93,7 +112,7 @@ module.exports = {
       examples: [
         ['добавь в покупки молоко и хлеб', { addressed: true, say: '', actions: [{ tool: 'note_add', arg: 'покупки|молоко; хлеб' }] }],
       ],
-      run: async (arg) => add(arg),
+      run: async (arg, ctx, request) => add(arg, request),
     },
     {
       name: 'note_show',

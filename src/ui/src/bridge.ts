@@ -1,7 +1,8 @@
 // Мост к ядру (src/preload.js → window.jarvis) с типами. Единственный путь окон к системе: Node.js в окнах нет.
 
 export type Mode = 'full' | 'orb' | 'cube' | 'hidden';
-export type Source = 'text' | 'wake' | 'hotkey' | 'followup' | 'followup-voice';
+// wake-window — фраза в окне ожидания после одинокого «Орион» (имени в ней самой нет)
+export type Source = 'text' | 'wake' | 'wake-window' | 'hotkey' | 'followup' | 'followup-voice';
 
 export interface Person {
   id: string;
@@ -117,6 +118,7 @@ export interface AlarmMsg {
 export interface PlayerState {
   playing?: boolean;
   active?: boolean;
+  status?: 'idle' | 'loading' | 'playing' | 'paused' | 'error';
   name?: string;
   song?: string;
   volume?: number;
@@ -149,6 +151,10 @@ export interface Jarvis {
   orbPassthrough(on: boolean): void;
   presence(mode: Mode | 'collapse'): void;
   orbHeight(h: number): void;
+  tryPhrase(text: string): void; // настройки → окно разговора: выполнить пример
+  onTry(cb: (text: string) => void): void;
+  painted(mode: Mode): void; // окно нарисовало новый режим — main делает его видимым
+  taskbarState(icon: string | null, label: string): void; // точка состояния на кнопке в панели задач
   onQuestion(cb: (msg: { id?: string; text?: string }) => void): void;
   replyQuestion(id: string, text: string | null): void;
   onEnrollOffer(cb: () => void): void;

@@ -11,6 +11,7 @@ export interface Speaker {
   speak(text: string): void;
   stream(): SpeechStream;
   stop(): void;
+  dispose(): void; // замолчать и освободить звук (голос сменили — создан новый)
 }
 
 // Конец предложения — знак, пробел и заглавная (цифра, кавычка): «26.09.2026», «84.34», «т. е. это» не режем —
@@ -158,5 +159,11 @@ export function createSpeaker({ ownVoice, onStart, onEnd }: { ownVoice: boolean;
     s.end();
   }
 
-  return { speak, stream, stop };
+  function dispose() {
+    stop();
+    void ctx?.close().catch(() => {});
+    ctx = null;
+  }
+
+  return { speak, stream, stop, dispose };
 }

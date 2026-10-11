@@ -1,5 +1,5 @@
-// Как состояние разговора выглядит: цвет куба и голограммы, скорость вращения, метка
-import type { Tone } from '../kit/Cube.tsx';
+// Как состояние разговора выглядит: цвет шара и голограммы, скорость вращения, метка
+import type { Tone } from '../kit/Sphere.tsx';
 import type { CoreState } from './controller.ts';
 
 export function toneOf(core: CoreState): Tone {

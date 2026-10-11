@@ -1,9 +1,9 @@
-// Полное окно: шапка (куб, имя, микрофон, звук, настройки, меню «⋯», свернуть, скрыть), куб с табло,
+// Полное окно: шапка (шар, имя, микрофон, звук, настройки, меню «⋯», свернуть, скрыть), шар с табло,
 // лента разговора с карточками, подсказки по времени суток, панель (вопросы, люди, установка), «Да / Нет»,
 // будильник, «Запланировано» и строка ввода.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Conversation, State } from './controller.ts';
-import { Cube } from '../kit/Cube.tsx';
+import { Sphere } from '../kit/Sphere.tsx';
 import { Holo, Label } from '../kit/Holo.tsx';
 import { Button, Chip, IconButton, Progress } from '../kit/controls.tsx';
 import { Icon } from '../kit/Icon.tsx';
@@ -38,13 +38,28 @@ export function FullWindow({ s, c }: { s: State; c: Conversation }) {
     return () => ro.disconnect();
   }, [talking]);
 
-  // Меню закрывается щелчком мимо
+  // Меню закрывается щелчком мимо; открылось — фокус на первом пункте (клавиатурой — сразу стрелками)
+  const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(false);
     document.addEventListener('click', close);
+    menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
     return () => document.removeEventListener('click', close);
   }, [menu]);
+  // Стрелки — по пунктам, Esc — закрыть меню (а не спрятать окно), Tab — уйти из меню
+  const menuKeys = (e: React.KeyboardEvent) => {
+    const items = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>('button') || [])];
+    const i = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
+    } else if (e.key === 'Escape') {
+      e.stopPropagation(); // окно-обработчик Esc спрятал бы всё окно
+      e.nativeEvent.stopImmediatePropagation();
+      setMenu(false);
+    } else if (e.key === 'Tab') setMenu(false);
+  };
 
   // Отменённые таймеры в ленте приглушаются: их больше нет в «Запланировано», а время ещё не пришло
   const scheduled = useMemo(() => new Set(s.schedule.map((x) => x.id)), [s.schedule]);
@@ -68,7 +83,7 @@ export function FullWindow({ s, c }: { s: State; c: Conversation }) {
       <span className="full-scan" aria-hidden="true" />
       <header className="bar">
         <div className="drag" title={s.version}>
-          <Cube size={14} tone={tone} spin={spinOf(s.core)} />
+          <Sphere size={14} tone={tone} spin={spinOf(s.core)} />
           <span className="bar-name">{s.name}</span>
         </div>
         <div className="tools">
@@ -99,7 +114,7 @@ export function FullWindow({ s, c }: { s: State; c: Conversation }) {
           <IconButton icon="close" label="Скрыть (Esc)" danger onClick={a.hide} />
         </div>
         {menu && (
-          <div className="menu" role="menu">
+          <div className="menu" role="menu" ref={menuRef} onKeyDown={menuKeys}>
             <button type="button" role="menuitem" className="menu-item" onClick={a.reset}>
               <Icon name="new" /> Новый разговор
             </button>
@@ -117,13 +132,31 @@ export function FullWindow({ s, c }: { s: State; c: Conversation }) {
       </header>
 
       <section className={`stage${talking ? ' stage-row' : ''}${s.panel && !s.panel.modal ? ' stage-small' : ''}`}>
-        <button type="button" className="stage-cube" aria-label="Говорите" title="Нажмите и говорите" onClick={() => void a.core()}>
-          <Cube size={talking ? 30 : s.panel && !s.panel.modal ? 56 : 84} tone={tone} spin={spinOf(s.core)} voice dim={s.core === 'off'} />
+        <button type="button" className="stage-sphere" aria-label="Говорите" title="Нажмите и говорите" onClick={() => void a.core()}>
+          <Sphere
+            size={talking ? 36 : s.panel && !s.panel.modal ? 64 : 108}
+            tone={tone}
+            spin={spinOf(s.core)}
+            voice
+            dim={s.core === 'off'}
+          />
         </button>
-        <div className="stage-text">
-          {(talking || s.core !== 'idle' || !s.statusHint) && <Label>{tagOf(s.core, !!s.follow)}</Label>}
+        {/* Табло переезжает из-под шара вбок — проявляется на новом месте (key), шар сжимается плавно (Sphere) */}
+        <div className="stage-text swap" key={talking ? 'row' : 'column'}>
+          {(talking || s.core !== 'idle' || !s.statusHint) && (
+            <Label key={tagOf(s.core, !!s.follow)} className="swap">
+              {tagOf(s.core, !!s.follow)}
+            </Label>
+          )}
           {s.status && !(talking && s.statusHint) && <span className={s.statusHint ? 'stage-hint' : 'stage-status'}>{s.status}</span>}
-          {s.caption && <span className={`stage-caption${s.core === 'hearing' ? ' hearing' : ''}`}>{s.caption}</span>}
+          {s.caption && (
+            <span
+              key={s.core === 'hearing' ? 'heard' : s.caption}
+              className={`stage-caption swap${s.core === 'hearing' ? ' hearing' : ''}`}
+            >
+              {s.caption}
+            </span>
+          )}
           <FollowBar follow={s.follow} />
           {s.setup && (
             <button

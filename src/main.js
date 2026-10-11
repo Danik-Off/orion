@@ -54,12 +54,20 @@ const configFile = configFileFor({ packaged, root, dataDir, ensureUserConfig, is
 const config = loadConfig(configFile);
 const modelsDir = resolveModelsDir({ config, packaged, root, dataDir, baseDir: packaged ? dataDir : root, execPath: process.execPath });
 
+// Из исходников (npm start) Windows показала бы в панели задач значок electron.exe — даём свой
+const devIcon = () => {
+  if (electron.app.isPackaged) return undefined;
+  const png = path.join(__dirname, '..', 'build', 'icon.png'); // npm run icon
+  return fs.existsSync(png) ? png : require('./core/tray').drawReactor(64);
+};
 const ui = createWindowManager({
+  icon: devIcon(),
   title: config.name,
   preload: path.join(__dirname, 'preload.js'),
   html: path.join(__dirname, 'ui', 'dist', 'index.html'),
   pinned: config.pinned === true,
-  cube: () => config.ui?.cube !== false, // скрытое окно оставляет в углу маленький куб
+  cube: () => config.ui?.cube !== false, // скрытое окно оставляет в углу маленький шар
+  taskbar: () => config.ui?.taskbar !== false, // кнопка в панели задач Windows и в свёрнутом виде
   orbOffset: (area) => radioPlayer?.orbOffset(area) || 0, // плашка — над мини-плеером, если он в том же углу
 });
 const settingsWindow = createSettingsWindow({
@@ -104,7 +112,11 @@ settings = createSettingsIpc({
   secrets,
   onSaved: (patch) => {
     if ('radio.player.show' in patch) radioPlayer.refresh();
-    if ('ui.cube' in patch && ui.tucked()) ui.setMode('hidden'); // куб включили или выключили, пока окно скрыто
+    if ('ui.cube' in patch && ui.tucked()) ui.setMode('hidden'); // шар включили или выключили, пока окно скрыто
+    if ('ui.taskbar' in patch) {
+      ui.refreshLayer();
+      if (patch['ui.taskbar'] === false) ui.setOverlay(null);
+    }
   },
 });
 app.whenReady().then(() => {

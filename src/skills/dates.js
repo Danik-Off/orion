@@ -121,6 +121,19 @@ function holidayDate(phrase) {
     const d = programmersDay(new Date().getFullYear());
     return `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   }
+  // Времена года и выходные: «до весны» — это 1 марта, а не «Праздник Весны и Труда»
+  const season = [
+    [/^весн/, '03-01'],
+    [/^лет[ауо]?$/, '06-01'],
+    [/^осен/, '09-01'],
+    [/^зим/, '12-01'],
+  ].find(([re]) => re.test(t));
+  if (season) return season[1];
+  if (/^(?:выходн|субботы|субботу)/.test(t)) {
+    const d = new Date();
+    d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7 || 7));
+    return `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
   const dm = t.match(/^(\d{1,2}) ([а-я]+)/);
   if (dm) {
     const m = MONTHS.findIndex((x) => dm[2].startsWith(x));

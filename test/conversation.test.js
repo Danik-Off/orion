@@ -154,7 +154,7 @@ test('подтверждение: «да» голосом — ответ ядр�
   assert.deepEqual(w.s().confirm, { text: 'Выключить компьютер?' });
   assert.match(w.spoken[0], /Скажите «да» или «нет»/);
   w.endSpeech();
-  assert.equal(w.s().core, 'ask', 'ждёт ответа — янтарный куб');
+  assert.equal(w.s().core, 'ask', 'ждёт ответа — янтарный шар');
   w.emit('onHeard', { final: 'да', command: null, voice: null });
   assert.deepEqual(w.called('replyConfirm')[0], ['replyConfirm', 'q1', true]);
   assert.equal(w.s().confirm, null);
@@ -165,31 +165,31 @@ test('подтверждение: «да» голосом — ответ ядр�
   assert.deepEqual(w.called('replyConfirm')[1], ['replyConfirm', 'q2', false]);
 });
 
-test('голограмма: появляется из куба, уходит обратно и прячет окно; позвали во время ухода — остаётся', async () => {
+test('голограмма: появляется из шара, уходит обратно и прячет окно; позвали во время ухода — остаётся', async () => {
   const w = setup();
   w.emit('onMode', 'orb');
   assert.equal(w.s().holo, 'seed');
-  await tick(50);
+  await tick(90);
   assert.equal(w.s().holo, 'open');
   w.c.actions.closeHolo();
   assert.equal(w.s().holo, 'closing');
-  await tick(400);
+  await tick(480);
   assert.equal(w.s().mode, 'hidden');
   assert.deepEqual(w.called('presence').at(-1), ['presence', 'hidden']);
 
   w.emit('onMode', 'orb');
-  await tick(50);
+  await tick(90);
   w.c.actions.closeHolo();
   w.enableMic();
   w.emit('onHeard', { partial: 'орион', command: '', voice: null }); // «Орион…» во время ухода
-  await tick(400);
+  await tick(480);
   assert.equal(w.s().mode, 'orb', 'передумала уходить');
   assert.equal(w.s().holo, 'open');
   w.emit('onHeard', { final: 'орион', command: '', voice: null }); // фраза закончилась — таймеры слушания штатные
   w.c.actions.escape();
 });
 
-test('скрытое окно и куб: всё забыто, следующий раз — с чистого экрана', async () => {
+test('скрытое окно и шар: всё забыто, следующий раз — с чистого экрана', async () => {
   const w = setup();
   w.c.actions.submitText('привет');
   await tick();
@@ -210,4 +210,120 @@ test('Esc: сначала отменить раздумье, затем замо
   assert.equal(w.s().core, 'off');
   w.c.actions.escape();
   assert.deepEqual(w.called('presence').at(-1), ['presence', 'hidden']);
+});
+
+test('вопросы не зависают: «стоп» и отмена отвечают ядру «нет»; набранное «да» — ответ; пустой Enter не пропускает вопрос', async () => {
+  const w = setup();
+  w.enableMic();
+  w.emit('onConfirm', { id: 'c1', text: 'Выключить компьютер?' });
+  w.emit('onHeard', { final: 'орион стоп', command: 'стоп', voice: null });
+  assert.deepEqual(w.called('replyConfirm')[0], ['replyConfirm', 'c1', false], '«стоп» — ядро перестаёт ждать');
+  assert.equal(w.s().confirm, null);
+
+  w.emit('onConfirm', { id: 'c2', text: 'Удалить?' });
+  w.c.actions.submitText('да');
+  assert.deepEqual(w.called('replyConfirm')[1], ['replyConfirm', 'c2', true]);
+  assert.equal(w.called('ask').length, 0, '«да» не ушло новым запросом');
+
+  w.emit('onQuestion', { id: 'q1', text: 'В каком вы городе?' });
+  w.c.actions.submitText('   ');
+  assert.equal(w.called('replyQuestion').length, 0, 'пустой Enter — не «пропустить»');
+  w.emit('onHeard', { final: 'орион стоп', command: 'стоп', voice: null });
+  assert.deepEqual(w.called('replyQuestion')[0], ['replyQuestion', 'q1', null]);
+  assert.equal(w.s().panel, null);
+});
+
+test('смена голоса в настройках не включает выключенный микрофон; старый голос замолкает', async () => {
+  let created = 0;
+  let disposed = 0;
+  const core = fakeApi({
+    settings: { name: 'Орион', stt: true, tts: true, listenOnStart: true, hotkey: 'Ctrl+Alt+J', speaker: { available: false, people: [] } },
+  });
+  let micOn = false;
+  const c = createConversation({
+    api: core.api,
+    createMic: ({ onChange }) => ({
+      start: async () => ((micOn = true), onChange(true)),
+      stop: () => ((micOn = false), onChange(false)),
+      pause() {},
+      isOn: () => micOn,
+    }),
+    createSpeaker: (h) => (
+      created++,
+      { speak: () => h.onStart(), stream: () => ({ push() {}, end() {} }), stop() {}, dispose: () => disposed++ }
+    ),
+    createRadio: () => ({
+      play: async () => true,
+      stop() {},
+      pause() {},
+      resume() {},
+      duck() {},
+      setVolume() {},
+      playing: () => false,
+      active: () => false,
+      sound: () => false,
+    }),
+    playChime() {},
+    setQuiet() {},
+    hour: () => 14,
+  });
+  all.push(c);
+  c.connect();
+  await tick(10);
+  assert.equal(micOn, true, 'при запуске микрофон включается сам');
+  await c.actions.toggleMic();
+  assert.equal(micOn, false);
+  const before = created;
+  core.emit('onSettingsChanged', { 'speech.ttsSpeed': 1.2 });
+  await tick(10);
+  assert.equal(micOn, false, 'выключенный микрофон остался выключенным');
+  assert.equal(created, before + 1, 'новый голос');
+  assert.ok(disposed >= 1, 'старый голос освобождён');
+});
+
+test('напоминание во время ответа ждёт его конца, а не обрывает', async () => {
+  const w = setup();
+  w.c.actions.submitText('расскажи историю');
+  await tick();
+  assert.equal(w.s().core, 'speaking');
+  const said = w.spoken.length;
+  w.emit('onAnnounce', 'Обновление скачано.');
+  assert.equal(w.spoken.length, said, 'пока говорит — не перебивает');
+  w.endSpeech();
+  await tick(450);
+  assert.ok(w.spoken.includes('Обновление скачано.'));
+});
+
+test('панели: Esc у предложения — как «Позже»: ядро не ждёт вечно, полоска «скачать» остаётся', async () => {
+  const w = setup();
+  w.emit('onBrainOffer', { size: '2,7 ГБ' });
+  w.c.actions.escape(); // первый Esc — замолчать (предложение зачитывается вслух)
+  w.endSpeech();
+  w.c.actions.escape();
+  assert.deepEqual(w.called('brainAnswer')[0], ['brainAnswer', 'later'], 'ядро не ждёт ответа вечно');
+  assert.equal(w.s().panel, null);
+
+  w.emit('onSetupOffer', { parts: [{ title: 'Голос', size: '100 МБ' }], total: '100 МБ', backend: 'llamacpp' });
+  w.c.actions.escape();
+  assert.equal(w.s().panel, null);
+  assert.equal(w.s().setup?.pending, true, 'остаётся полоска «Не установлено… нажмите, чтобы скачать»');
+});
+
+test('«Что я умею»: нажатый в настройках пример выполняется в окне разговора как набранный', async () => {
+  const w = setup();
+  w.emit('onTry', 'Подбрось монетку');
+  await tick();
+  assert.deepEqual(w.called('ask')[0].slice(1, 3), ['Подбрось монетку', 'text']);
+});
+
+test('свёрнутый шар: перебили речь одним «Орион» — голограмма «Слушаю» открывается, а не только слушает молча', async () => {
+  const w = setup();
+  w.enableMic();
+  w.emit('onMode', 'cube');
+  w.c.actions.submitText('расскажи историю');
+  await tick();
+  assert.equal(w.s().core, 'speaking');
+  w.emit('onHeard', { final: 'орион', command: '', voice: null });
+  assert.deepEqual(w.called('presence').at(-1), ['presence', 'orb']);
+  assert.equal(w.s().core, 'listening');
 });

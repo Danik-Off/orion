@@ -1,6 +1,6 @@
 // Голографическая панель: прозрачная подложка, развёртка, уголки и мерцающая рамка (текст не мерцает).
 import type { HTMLAttributes, ReactNode } from 'react';
-import type { Tone } from './Cube.tsx';
+import type { Tone } from './Sphere.tsx';
 
 export function Holo({
   tone = 'teal',

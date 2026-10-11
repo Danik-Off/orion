@@ -21,11 +21,13 @@ const KEY_NAMES: Record<string, string> = {
   ArrowRight: 'Right',
   '+': 'Plus',
 };
-// Сочетание из события: Ctrl+Alt+J → CommandOrControl+Alt+J; null — ещё не сочетание; '' — нужен модификатор
+// Сочетание из события: Ctrl+Alt+J → CommandOrControl+Alt+J; null — ещё не сочетание; '' — нужен Ctrl, Alt или Win.
+// Shift в одиночку не годится: Shift+A — это заглавная «A», а глобальное сочетание отняло бы её у всех программ
 function accelerator(e: React.KeyboardEvent): string | null {
   if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return null;
   const mods = [e.ctrlKey && 'CommandOrControl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Super'].filter(Boolean);
-  if (!mods.length && !/^F([1-9]|1[0-9]|2[0-4])$/.test(e.key)) return '';
+  const strong = e.ctrlKey || e.altKey || e.metaKey;
+  if (!strong && !/^F([1-9]|1[0-9]|2[0-4])$/.test(e.key)) return '';
   const key =
     KEY_NAMES[e.key] ||
     (e.code.startsWith('Key')
@@ -49,7 +51,14 @@ function Control({ row, ctx, s }: { row: Row; ctx: Ctx; s: SettingsState }) {
 
   switch (row.type) {
     case 'toggle':
-      return <Toggle checked={value !== false} label={row.label} onChange={(on) => void store.save({ [row.key]: on })} />;
+      return (
+        <Toggle
+          checked={s.loaded ? value !== false : false}
+          label={row.label}
+          disabled={!s.loaded}
+          onChange={(on) => void store.save({ [row.key]: on })}
+        />
+      );
     case 'select': {
       const options = typeof row.options === 'function' ? row.options(s) : row.options;
       const current = String(value ?? '');
@@ -103,7 +112,8 @@ function Control({ row, ctx, s }: { row: Row; ctx: Ctx; s: SettingsState }) {
             setEditing(false);
             const v = draft.trim();
             if ((v === '' && !row.allowEmpty) || v === String(value ?? '')) return setDraft(String(value ?? ''));
-            if (!(await store.save({ [row.key]: v }))) setDraft(String(value ?? ''));
+            // Не сохранилось — набранное остаётся в поле, причина видна под строкой: можно поправить
+            if (!(await store.save({ [row.key]: v }))) setDraft(v);
           }}
           onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
         />
@@ -136,11 +146,13 @@ function Control({ row, ctx, s }: { row: Row; ctx: Ctx; s: SettingsState }) {
           }}
           onBlur={() => setEditing(false)}
           onKeyDown={async (e) => {
+            // Tab и Shift+Tab — уйти из поля, как из любого другого (иначе клавиатурой отсюда не выбраться)
+            if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey) return;
             e.preventDefault();
             if (e.key === 'Escape') return (e.target as HTMLInputElement).blur();
             const accel = accelerator(e);
             if (accel === null) return;
-            if (!accel) return setDraft('Нужен Ctrl, Alt или Shift…');
+            if (!accel) return setDraft('Нужен Ctrl, Alt или Win…');
             (e.target as HTMLInputElement).blur();
             if (accel !== value) await store.save({ [row.key]: accel });
           }}
@@ -162,11 +174,18 @@ function Control({ row, ctx, s }: { row: Row; ctx: Ctx; s: SettingsState }) {
 export function RowView({ row, ctx, s, flash = false }: { row: Row; ctx: Ctx; s: SettingsState; flash?: boolean }) {
   if (row.when && !row.when(s.values, s)) return null;
   const hint = hintOf(row, s);
+  const error = 'key' in row ? s.errors[row.key] : '';
   return (
     <div className={`row${row.wide ? ' wide' : ''}${flash ? ' flash' : ''}`} data-key={'key' in row ? row.key : undefined}>
       <div className="row-text">
         <span className="row-label">{row.label}</span>
-        {hint && <span className="row-hint">{hint}</span>}
+        {error ? (
+          <span className="row-hint warn" role="alert">
+            {error}
+          </span>
+        ) : (
+          hint && <span className="row-hint">{hint}</span>
+        )}
       </div>
       <div className="row-control">
         <Control row={row} ctx={ctx} s={s} />
@@ -229,6 +248,22 @@ export function Line({
   );
 }
 
+// Раздел загружается или загрузка не удалась — вместо пустой страницы
+export function LoadState({ failed, retry }: { failed: string; retry: () => void }) {
+  return (
+    <div className="page-state" role="status">
+      {failed ? (
+        <>
+          <span>Не удалось загрузить: {failed}</span>
+          <Button onClick={retry}>Повторить</Button>
+        </>
+      ) : (
+        <span>Загружаю…</span>
+      )}
+    </div>
+  );
+}
+
 // Действия с кнопками: пока идёт — подпись «…», ответ ядра — новые данные, ошибка — у строки, где нажали
 export function useActions<T>(setData: (r: T) => void) {
   const [busy, setBusy] = useState<Record<string, string>>({});
@@ -245,9 +280,26 @@ export function useActions<T>(setData: (r: T) => void) {
     if (r && r.ok === false) setErrors((x) => ({ ...x, [key]: r.error || 'Не получилось.' }));
     return r;
   }
-  const button = (key: string, label: string, busyLabel: string, fn: () => Promise<unknown>, primary = false) => (
-    <Button key={key} variant={primary ? 'primary' : 'secondary'} disabled={key in busy} onClick={() => void act(key, busyLabel, fn)}>
-      {busy[key] || label}
+  // armed: кнопка с подтверждением (удалить гигабайты модели) — первое нажатие спрашивает «Точно удалить?»,
+  // второе в течение 4 с — делает
+  const [armed, setArmed] = useState<string | null>(null);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(null), 4000);
+    return () => clearTimeout(t);
+  }, [armed]);
+  const button = (key: string, label: string, busyLabel: string, fn: () => Promise<unknown>, primary = false, confirm = '') => (
+    <Button
+      key={key}
+      variant={armed === key ? 'danger' : primary ? 'primary' : 'secondary'}
+      disabled={key in busy}
+      onClick={() => {
+        if (confirm && armed !== key) return setArmed(key);
+        setArmed(null);
+        void act(key, busyLabel, fn);
+      }}
+    >
+      {busy[key] || (armed === key ? confirm : label)}
     </Button>
   );
   const error = (...keys: string[]) => keys.map((k) => errors[k]).find(Boolean) || '';

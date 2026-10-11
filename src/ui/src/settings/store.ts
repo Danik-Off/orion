@@ -14,10 +14,23 @@ export interface SettingsState {
   version: string;
   restart: boolean;
   error: string;
+  loaded: boolean; // до загрузки переключатели не рисуются «включёнными» по умолчанию
+  loadError: string;
+  errors: Record<string, string>; // ошибка сохранения — у той строки, где меняли
 }
 
 export function createStore(api: Jarvis) {
-  let state: SettingsState = { values: {}, skills: [], models: [], version: '', restart: false, error: '' };
+  let state: SettingsState = {
+    values: {},
+    skills: [],
+    models: [],
+    version: '',
+    restart: false,
+    error: '',
+    loaded: false,
+    loadError: '',
+    errors: {},
+  };
   const listeners = new Set<() => void>();
   const set = (patch: Partial<SettingsState>) => {
     state = { ...state, ...patch };
@@ -25,20 +38,37 @@ export function createStore(api: Jarvis) {
   };
 
   async function load() {
-    const r = await api.settingsGet();
-    if (!r) return;
+    let r;
+    try {
+      r = await api.settingsGet();
+    } catch (err) {
+      set({ loadError: String((err as Error)?.message || err) });
+      return;
+    }
+    if (!r) return set({ loadError: 'ядро не ответило' });
     const values: Record<string, unknown> = { ...(r.values || {}) };
     // Навыки — тоже значения: skills.<id> → включён ли (страница «Навыки» — обычные переключатели)
     for (const s of r.skills || []) values[`skills.${s.id}`] = s.enabled;
-    set({ values, skills: r.skills || [], models: r.models || [], version: r.version || '' });
+    set({ values, skills: r.skills || [], models: r.models || [], version: r.version || '', loaded: true, loadError: '' });
   }
 
   // → true — сохранено; false — ядро отказало (текст ошибки — в state.error)
   async function save(patch: Record<string, unknown>): Promise<boolean> {
-    set({ error: '' });
-    const r = await api.settingsSave(patch);
+    const keys = Object.keys(patch);
+    const errors = { ...state.errors };
+    for (const k of keys) delete errors[k];
+    set({ error: '', errors });
+    let r;
+    try {
+      r = await api.settingsSave(patch);
+    } catch (err) {
+      r = { ok: false, error: String((err as Error)?.message || err) };
+    }
     if (!r?.ok) {
-      set({ error: r?.error || 'Не удалось сохранить.' });
+      const message = r?.error || 'Не удалось сохранить.';
+      // Одна настройка — ошибка у её строки; несколько сразу — общая, наверху
+      if (keys.length === 1) set({ errors: { ...state.errors, [keys[0]]: message } });
+      else set({ error: message });
       return false;
     }
     const values = { ...state.values };

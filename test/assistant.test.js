@@ -360,3 +360,41 @@ test('«закрой X» не запускает X, даже если модел
   const both = plan('', ['steam_launch', 'Deadlock']);
   assert.equal(g(both, 'закрой и открой дедлок заново'), both);
 });
+
+test('передумал в той же фразе: «выключи компьютер… нет» — ничего не делать; «…или нет» — обычный вопрос', async () => {
+  const { isRetraction } = require('../src/core/assistant/intent');
+  for (const t of ['выключи компьютер нет', 'перезагрузить нет', 'поставь будильник на семь, а хотя не надо', 'открой телеграм передумал'])
+    assert.equal(isRetraction(t), true, t);
+  for (const t of ['нет', 'не надо', 'есть ли у меня напоминания или нет', 'почему нет', 'как сказать нет', 'а может нет', 'конечно нет'])
+    assert.equal(isRetraction(t), false, t);
+
+  const { skills, store, ctx } = makeRegistry({ planner: 'single' });
+  const { llm, calls } = fakeLlm(['{"topic":"power","actions":[{"tool":"power","arg":"shutdown 0"}],"say":""}']);
+  const audit = [];
+  const assistant = createAssistant({ config: ctx.config, llm, skills, memory: store, audit: (x) => audit.push(x), notify: () => {} });
+  const r = await assistant.handle('выключи компьютер нет', { source: 'wake' });
+  assert.deepEqual(r.actions, []);
+  assert.match(r.say, /не буду/);
+  assert.equal(calls.length, 0, 'модель не спрашивали — план с выключением не появился');
+  assert.ok(audit.some((x) => x.retracted));
+  // В продолжении разговора — тоже ничего не делать (команды без имени там считаются нашими)
+  assert.deepEqual((await assistant.handle('включи музыку отмена', { source: 'followup' })).actions || [], []);
+});
+
+test('«повтори» — последний ответ ещё раз, без модели и без повтора действий', async () => {
+  const { isRepeat } = require('../src/core/assistant/intent');
+  for (const t of ['повтори', 'повтори еще раз', 'что ты сказал?', 'ещё раз скажи', 'не расслышал, повтори', 'Орион, повтори'])
+    assert.equal(isRepeat(t), true, t);
+  for (const t of ['повтори за мной привет', 'повторить урок', 'что ты умеешь']) assert.equal(isRepeat(t), false, t);
+
+  const { skills, store, ctx } = makeRegistry({ planner: 'single' });
+  const { llm, calls } = fakeLlm(['{"topic":"chat","actions":[],"say":"Столица Австралии — Канберра."}']);
+  const assistant = createAssistant({ config: ctx.config, llm, skills, memory: store, audit: () => {}, notify: () => {} });
+  assert.match((await assistant.handle('повтори', { source: 'wake' })).say, /ничего не говорил/);
+  await assistant.handle('какая столица австралии', { source: 'wake' });
+  const r = await assistant.handle('что ты сказал', { source: 'wake' });
+  assert.equal(r.say, 'Столица Австралии — Канберра.');
+  assert.deepEqual(r.actions, []);
+  assert.equal(calls.length, 1, 'модель не спрашивали второй раз');
+  await assistant.reset();
+});

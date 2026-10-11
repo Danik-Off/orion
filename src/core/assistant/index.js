@@ -20,7 +20,8 @@ const { createPrompts } = require('./prompts');
 const { createSession } = require('./session');
 const { createModelPlanner } = require('./model-planner');
 const { createSayStreamer } = require('./say-stream');
-const { guardCloseIntent, isRefusal, isUnknown } = require('./intent');
+const { guardCloseIntent, guardFindScreenshot, isRefusal, isUnknown, isRetraction, isRepeat, looksLikeChatter } = require('./intent');
+const REPEAT_MS = 10 * 60_000; // «повтори» помнит последний ответ столько
 const addressing = require('./addressing');
 const { createAlone } = require('./alone');
 const { MULTI } = require('../router');
@@ -101,8 +102,10 @@ function createAssistant({
   const brainless = () => llm.available?.() === false;
   const standard = defaultStages({ skills, router, modelPlanner, alone, brainless, audit });
   const chain = typeof stages === 'function' ? stages(standard) : standard;
-  // Сценарии выполняют фразы как команды: без вопросов о собеседнике и без маленькой модели (ей не видна цель сценария)
-  const commandChain = standard.filter((s) => s.name === 'quick' || s.name === 'model');
+  // Сценарии выполняют фразы как команды: без вопросов о собеседнике и без маленькой модели (ей не видна цель сценария).
+  // Без большой модели — ещё правила (alone): иначе шаг «какая погода» ответил бы «нужна большая модель»
+  const commandChain = standard.filter((s) => s.name === 'quick' || s.name === 'alone' || s.name === 'model');
+  let last = null; // { say, at } — последний ответ для «повтори»
 
   async function runActions(actions, request) {
     const spoken = [];
@@ -121,7 +124,8 @@ function createAssistant({
     return { spoken, problems, sources, cards, noFollowUp };
   }
 
-  // source: 'wake' — с ключевым словом, 'hotkey' — после клавиши или клика, 'followup' — продолжение без имени,
+  // source: 'wake' — с ключевым словом, 'wake-window' — после одинокого «Орион» (имени в самой фразе нет),
+  //   'hotkey' — после клавиши или клика, 'followup' — продолжение без имени,
   //   'followup-voice' — продолжение, голос подтверждён, 'text' — набрано
   // person: { id, name, honorific } — собеседник (узнан по голосу или владелец при наборе текста); null — гость
   // signal — отмена (фразу дополнили или перебили): до начала действий запрос просто бросается
@@ -144,6 +148,19 @@ function createAssistant({
       return { say: address('Начнём с чистого листа, сэр.'), actions: [] };
     }
 
+    // «Повтори» — последний ответ ещё раз, без модели и без действий (их повторять нельзя: «повтори» после
+    // «выключи компьютер» не должно выключать снова)
+    if (isRepeat(text)) {
+      if (last && Date.now() - last.at < REPEAT_MS) return { say: last.say, actions: [], stage: 'repeat' };
+      if (!followup) return { say: address('Я пока ничего не говорил, сэр.'), actions: [], stage: 'repeat' };
+    }
+
+    // «Выключи компьютер… нет» — передумал: ничего не делать (без обращения — это и вовсе не нам)
+    if (isRetraction(text)) {
+      audit({ input: text, source, person: personId, retracted: true });
+      return followup ? { ignored: true } : { say: address('Хорошо, не буду, сэр.'), actions: [], stage: 'retract' };
+    }
+
     const turn = {
       text,
       content: followup ? `[без обращения] ${text}` : text,
@@ -157,12 +174,19 @@ function createAssistant({
       onSay: sayPart,
       signal,
     };
-    const plan = guardCloseIntent(await runStages(chain, turn), text);
+    const plan = guardFindScreenshot(guardCloseIntent(await runStages(chain, turn), text), text);
     audit({ input: text, source, person: personId, plan });
     // Человек договаривает или перебил новой командой — этот план уже не нужен, действия не выполняем
     if (signal?.aborted) return { cancelled: true };
     // Фоновый разговор, услышанный без обращения, — молча игнорируем; текущий разговор при этом не трогаем
     if (followup && plan.addressed === false) return { ignored: true };
+    // Голосом, длинно и непонятно для самой модели — это разговор людей рядом (имя послышалось или его
+    // сказали в разговоре): молчать, а не встревать с «Не расслышал, повторите?». Набранное — ответить
+    // Только когда имени в самой фразе не было: «Орион, и разбивали на грего» — к нам, переспросить
+    if ((source === 'wake-window' || source.startsWith('followup')) && looksLikeChatter(text, plan)) {
+      audit({ input: text, source, chatter: true });
+      return { ignored: true };
+    }
 
     // Человек договаривает фразу после паузы — действия ждут: договорённое заменит этот запрос (signal),
     // и действия по обрывку («напомни… через десять» → напоминание на завтра) не выполнятся
@@ -192,6 +216,7 @@ function createAssistant({
     const used = plan.actions.map((a) => skills.skillOf(a.tool)).filter(Boolean);
     const topic = used[0] || (plan.topic && plan.topic !== CHAT_TOPIC ? plan.topic : CHAT_TOPIC);
     session.add({ text, topic, actions: plan.actions, say, used });
+    if (say && !plan.silent) last = { say, at: Date.now() };
     // streamed — ответ уже звучит по предложениям, окну не нужно озвучивать его заново
     return {
       say,
