@@ -1,5 +1,6 @@
 // Сборка ядра: журнал, память, языковые модели, навыки, ступени разбора и ассистент.
 // Здесь только связи между частями — логика живёт в src/core.
+const { createVision } = require('./vision');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -13,6 +14,7 @@ const { createRouter } = require('../core/router');
 const { createCloud } = require('../core/cloud');
 const { createWakeMatcher } = require('../core/wake');
 const allSkills = require('../skills');
+const reminders = require('../skills/reminders');
 
 const CONFIRM_TIMEOUT_MS = 30_000;
 
@@ -51,7 +53,8 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
     return new Promise((resolve) => {
       const id = crypto.randomUUID();
       pendingConfirms.set(id, resolve);
-      ui.setMode('full');
+      // «Да / Нет» есть и в капсуле: полное окно ради вопроса не разворачиваем, если его не было на экране
+      ui.setMode(ui.mode() === 'full' ? 'full' : 'orb');
       ui.send('jarvis:confirm', { id, text });
       setTimeout(() => pendingConfirms.delete(id) && resolve(null), CONFIRM_TIMEOUT_MS);
     });
@@ -87,7 +90,7 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
 
   // Сработавший таймер: плашка, голос и системное уведомление (на случай, если звук выключен).
   function remind(text) {
-    if (ui.mode() === 'hidden') ui.setMode('orb');
+    if (ui.tucked()) ui.setMode('orb');
     ui.send('jarvis:remind', text);
     const { Notification } = electron;
     if (Notification.isSupported()) new Notification({ title: `${config.name} — напоминание`, body: text }).show();
@@ -95,7 +98,7 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
 
   // Сказать что-то самому, без вопроса (рассказ после обновления): реплика в окне и голосом
   function say(text) {
-    if (ui.mode() === 'hidden') ui.setMode('orb');
+    if (ui.tucked()) ui.setMode('orb');
     ui.send('jarvis:announce', String(text));
   }
 
@@ -133,6 +136,7 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
         active: s?.active === true,
         name: String(s?.name || radioState.name),
         url: s?.active === false ? '' : radioState.url,
+        status: s?.status || 'idle', // мини-плеер: «Подключаюсь…», «Станция не отвечает»
       }),
   };
 
@@ -177,10 +181,14 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
     clipboard: { readText: () => clipboard.readText(), writeText: (t) => clipboard.writeText(t) },
     dataDir,
     saveSettings: (patch) => saveSettings(patch), // настройки создаются позже; навыки зовут это уже после запуска
+    // Изменились таймеры, напоминания или будильники — окно обновляет полоску «Запланировано»
+    onSchedule: () => ui.send('jarvis:schedule', reminders.schedule()),
     perform: async () => '', // подменяется ниже, когда ассистент создан (сценарии выполняют фразы как команды)
   };
+  // Зрение: снимок экрана и вопрос к модели по картинке (только встроенная модель — снимок не уходит в сеть)
+  ctx.vision = createVision({ electron, config, llama, llm, audit });
   const skills = createSkillRegistry(allSkills, { config, ctx, audit });
-  const router = createRouter({ config, server: routerServer, skills, audit, dataDir });
+  const router = createRouter({ config, server: routerServer, skills, audit, dataDir, alone: () => llm.available() === false });
   const cloud = createCloud({ config, confirm, audit });
   const assistant = createAssistant({
     config,
@@ -212,6 +220,8 @@ function createServices({ config, dataDir, modelsDir, ui, electron, saveSettings
     answerQuestion,
     radio,
     alarmSnooze,
+    schedule: () => reminders.schedule(),
+    scheduleCancel: (id) => reminders.cancel(id),
     allSkills, // все навыки — для списка в настройках
     ctx,
     skills,

@@ -1,0 +1,152 @@
+/* «Призма» — дизайн-система Ориона: светящийся шар и прозрачная голограмма.
+   Один цвет на состояние (--holo — тройка RGB, чтобы задавать прозрачность): бирюза — готов и отвечает,
+   мята — слушает, фиолет — думает, янтарь — ждёт «да/нет» или ошибка, серый — микрофон выключен.
+   Острые углы, развёртка, мерцает рамка — не текст. Шрифты встроены (OFL): Unbounded — цифры и заголовки,
+   Manrope — текст, JetBrains Mono — метки и кнопки. */
+@import '@fontsource/unbounded/cyrillic-300.css';
+@import '@fontsource/unbounded/latin-300.css';
+@import '@fontsource/unbounded/cyrillic-500.css';
+@import '@fontsource/unbounded/latin-500.css';
+@import '@fontsource/manrope/cyrillic-400.css';
+@import '@fontsource/manrope/latin-400.css';
+@import '@fontsource/manrope/cyrillic-600.css';
+@import '@fontsource/manrope/latin-600.css';
+@import '@fontsource/manrope/cyrillic-700.css';
+@import '@fontsource/manrope/latin-700.css';
+@import '@fontsource/jetbrains-mono/cyrillic-400.css';
+@import '@fontsource/jetbrains-mono/latin-400.css';
+@import '@fontsource/jetbrains-mono/cyrillic-500.css';
+@import '@fontsource/jetbrains-mono/latin-500.css';
+
+:root {
+  --teal: 95, 255, 224;
+  --mint: 93, 255, 180;
+  --violet: 180, 140, 255;
+  --amber: 255, 180, 92;
+  --grey: 150, 175, 180;
+  --holo: var(--teal);
+
+  --bg: #03080a;
+  --glass: rgba(4, 18, 20, 0.92); /* окно и панели: почти непрозрачно — читается на любых обоях */
+  --glass-holo: rgba(6, 34, 36, 0.62); /* голограмма в углу: видно рабочий стол */
+  --text: #f1fffc;
+  --text-2: rgba(220, 255, 245, 0.85);
+  --muted: rgba(190, 235, 228, 0.6);
+  --label: #9ffff0;
+  --line: rgba(var(--holo), 0.22);
+  --line-strong: rgba(var(--holo), 0.45);
+  --danger: #ff8a8a;
+
+  --font-display: 'Unbounded', 'Segoe UI Variable Display', sans-serif;
+  --font-ui: 'Manrope', 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
+
+  --shadow-text: 0 1px 2px rgba(0, 0, 0, 0.85);
+  --tone-shift: --hr 0.45s ease, --hg 0.45s ease, --hb 0.45s ease; /* смена цвета состояния */
+  --lvl: 0; /* громкость голоса 0..1 — шар «дышит» (задаёт контроллер разговора) */
+
+  color-scheme: dark;
+  font-family: var(--font-ui);
+  color: var(--text);
+}
+
+/* Состояние → цвет: задаётся на любом блоке, всё внутри перекрашивается.
+   Цвет — три зарегистрированных числа (--hr --hg --hb): браузер переводит их плавно, а --holo собирается
+   из них на том же блоке — при смене состояния всё, что берёт --holo, перетекает в новый цвет, а не мигает */
+@property --hr {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 95;
+}
+@property --hg {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 255;
+}
+@property --hb {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 224;
+}
+.tone-teal {
+  --hr: 95;
+  --hg: 255;
+  --hb: 224;
+}
+.tone-mint {
+  --hr: 93;
+  --hg: 255;
+  --hb: 180;
+}
+.tone-violet {
+  --hr: 180;
+  --hg: 140;
+  --hb: 255;
+}
+.tone-amber {
+  --hr: 255;
+  --hg: 180;
+  --hb: 92;
+}
+.tone-grey {
+  --hr: 150;
+  --hg: 175;
+  --hb: 180;
+}
+.tone-teal,
+.tone-mint,
+.tone-violet,
+.tone-amber,
+.tone-grey {
+  --holo: var(--hr), var(--hg), var(--hb);
+  --label: color-mix(in srgb, rgb(var(--holo)) 55%, #f2fffd); /* подписи — в оттенке состояния */
+  transition: var(--tone-shift);
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
+body {
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 1px solid rgb(var(--holo));
+  outline-offset: 2px;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(var(--holo), 0.25);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Спокойный режим и системное «меньше движения»: без мерцания, развёртки и пульса */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --calm: 1;
+  }
+}

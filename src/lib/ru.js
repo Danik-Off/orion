@@ -54,20 +54,74 @@ const NUM_WORDS = {
   сто: 100,
   двести: 200,
   триста: 300,
+  четыреста: 400,
+  пятьсот: 500,
+  шестьсот: 600,
+  семьсот: 700,
+  восемьсот: 800,
+  девятьсот: 900,
   полчаса: 30,
+  // Родительный падеж: «от двух тысяч», «из пяти»
+  двух: 2,
+  трех: 3,
+  четырех: 4,
+  пяти: 5,
+  шести: 6,
+  семи: 7,
+  восьми: 8,
+  девяти: 9,
+  десяти: 10,
+  двадцати: 20,
+  тридцати: 30,
+  сорока: 40,
+  пятидесяти: 50,
+  ста: 100,
+  двухсот: 200,
+  одного: 1,
+  одной: 1,
+  одиннадцати: 11,
+  двенадцати: 12,
+  тринадцати: 13,
+  четырнадцати: 14,
+  пятнадцати: 15,
+  шестнадцати: 16,
+  семнадцати: 17,
+  восемнадцати: 18,
+  девятнадцати: 19,
+  шестидесяти: 60,
+  семидесяти: 70,
+  восьмидесяти: 80,
+  девяноста: 90,
+  трехсот: 300,
+  четырехсот: 400,
+  пятисот: 500,
+  шестисот: 600,
+  семисот: 700,
+  восьмисот: 800,
+  девятисот: 900,
 };
+// Множители: «две тысячи» — 2 × 1000, а не 2 + 1000
+const SCALE = [
+  [/^тысяч/, 1000],
+  [/^миллион/, 1_000_000],
+];
 function wordsToNumber(text) {
   const digits = String(text).match(/\d+/);
   if (digits) return Number(digits[0]);
-  let sum = null;
+  let sum = null; // готовые тысячи, миллионы
+  let part = null; // число до следующего множителя
   for (const w of String(text)
     .toLowerCase()
     .replace(/ё/g, 'е')
     .split(/[^а-я]+/)) {
-    if (w in NUM_WORDS) sum = (sum || 0) + NUM_WORDS[w];
-    else if (sum !== null) break; // число закончилось
+    const scale = SCALE.find(([re]) => re.test(w))?.[1];
+    if (w in NUM_WORDS) part = (part || 0) + NUM_WORDS[w];
+    else if (scale) {
+      sum = (sum || 0) + (part ?? 1) * scale;
+      part = null;
+    } else if (sum !== null || part !== null) break; // число закончилось
   }
-  return sum;
+  return sum === null && part === null ? null : (sum || 0) + (part || 0);
 }
 
 // Длительность из фразы в секундах: «через 10 минут», «на полчаса», «через час», «полтора часа», «5 секунд».
@@ -79,8 +133,26 @@ const UNITS = [
 ];
 function durationFromText(text) {
   const t = String(text).toLowerCase().replace(/ё/g, 'е');
-  if (/полтора час/.test(t)) return 5400;
-  if (/полчаса/.test(t)) return 1800;
+  // Дробные и приблизительные: «полтора часа», «полторы минуты», «полминуты», «пол часа», «две с половиной
+  // минуты», «пару минут»
+  const unitOf = (u) => (/^сек/.test(u) ? 1 : /^мин/.test(u) ? 60 : 3600);
+  const half = t.match(/(?:^|\s)(\d+|[а-я]+) с половиной (секунд\S*|минут\S*|час\S*)/);
+  if (half && wordsToNumber(half[1]) !== null) return Math.round((wordsToNumber(half[1]) + 0.5) * unitOf(half[2]));
+  const oneAndHalf = t.match(/(?:^|\s)полтор[аы] (секунд\S*|минут\S*|час\S*)/);
+  if (oneAndHalf) return Math.round(1.5 * unitOf(oneAndHalf[1]));
+  const halfOf = t.match(/(?:^|\s)пол[ -]?(минуты|минутки|часа|часика)(?![а-я])/);
+  if (halfOf) return 0.5 * unitOf(halfOf[1]);
+  const pair = t.match(/(?:^|\s)(?:пару|пара|парочку) (секунд|минут|минуток|часов)(?![а-я])/);
+  if (pair) return 2 * unitOf(pair[1]);
+  // «через час двадцать», «два часа тридцать» — часы и минуты, хотя слово «минут» не сказано
+  const hm = t.match(/(?:^|\s)(?:(\d+|[а-я]+) )?час(?:а|ов)? (\d+|[а-я]+(?: [а-я]+)?)(?=\s|$)/);
+  if (hm && !/^\s*(?:минут|секунд|час)/.test(t.slice(hm.index + hm[0].length))) {
+    const h = hm[1] ? wordsToNumber(hm[1]) : 1;
+    const words = hm[2].split(' ');
+    const m = wordsToNumber(hm[2]) ?? wordsToNumber(words[0]);
+    if (h !== null && h > 0 && h <= 24 && m !== null && m > 0 && m < 60 && !/^(через|на|в)$/.test(hm[1] || '')) return h * 3600 + m * 60;
+    if ((!hm[1] || /^(через|на|в)$/.test(hm[1])) && m !== null && m > 0 && m < 60) return 3600 + m * 60;
+  }
   let total = null;
   let end = -1;
   // «2 часа 15 минут», «десять минут», «час» (без числа — один); складываем только идущие подряд

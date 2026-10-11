@@ -20,8 +20,11 @@ const rules = {
   'no-shadow': ['error', { builtinGlobals: false, hoist: 'functions' }],
 };
 
+const tseslint = require('typescript-eslint');
+const reactHooks = require('eslint-plugin-react-hooks');
+
 module.exports = [
-  { ignores: ['node_modules/', 'dist/', 'build/', 'models/', 'data/', 'voice-check/', 'wake-eval/', 'src/assets/'] },
+  { ignores: ['node_modules/', 'dist/', 'build/', 'models/', 'data/', 'voice-check/', 'wake-eval/', 'src/assets/', 'src/ui/dist/'] },
   js.configs.recommended,
   {
     // Ядро, навыки, скрипты и тесты — Node (CommonJS)
@@ -30,19 +33,25 @@ module.exports = [
     rules,
   },
   {
-    // Окно: обычные <script> в одной глобальной области. Что один файл даёт другим — /* exported */,
-    // что берёт у других — /* global */ в начале файла
-    files: ['src/renderer/**/*.js'],
-    languageOptions: { sourceType: 'script', globals: browserGlobals },
+    files: ['src/ui/public/mic-worklet.js'],
+    languageOptions: {
+      sourceType: 'script',
+      globals: { AudioWorkletProcessor: 'readonly', registerProcessor: 'readonly', sampleRate: 'readonly' },
+    },
   },
+  // Окна — TypeScript и React (src/ui): типы проверяет tsc (npm run ui:check), здесь — смысл кода и правила хуков
+  ...tseslint.configs.recommended.map((c) => ({ ...c, files: ['src/ui/**/*.{ts,tsx}'] })),
   {
-    // Окно настроек — настоящие ES-модули (import/export), без общих глобальных имён
-    files: ['src/renderer/settings/**/*.js'],
-    languageOptions: { sourceType: 'module', ecmaVersion: 2024, globals: browserGlobals },
-  },
-  {
-    files: ['src/renderer/mic-worklet.js'],
-    languageOptions: { globals: { AudioWorkletProcessor: 'readonly', registerProcessor: 'readonly', sampleRate: 'readonly' } },
+    files: ['src/ui/**/*.{ts,tsx}'],
+    languageOptions: { globals: browserGlobals },
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      ...reactHooks.configs.recommended.rules,
+      'no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', ignoreRestSiblings: true }],
+      'prefer-const': 'error',
+      eqeqeq: ['error', 'always', { null: 'ignore' }],
+    },
   },
   prettier,
 ];

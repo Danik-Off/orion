@@ -13,7 +13,8 @@ const RELEASES = 'https://github.com/ggml-org/llama.cpp/releases/download';
 // Большие — каталог «Модели на компьютере»: каждая проверена в Орионе (npm run eval -- --model …), см. docs/TECHNICAL.md.
 //   repo — файл с Hugging Face; url — прямая ссылка; size — байты; title, about, tags, license — для каталога;
 //   accuracy, ms — замер на 108 фразах (доля верных планов и среднее время ответа, RTX 5070) — видно в каталоге;
-//   tools: true — модели нужны описания инструментов в запросе; internal — маленькая модель первой ступени
+//   tools: true — модели нужны описания инструментов в запросе; internal — маленькая модель первой ступени;
+//   vision — файл проектора изображений (mmproj): с ним модель видит картинки — «что на экране» (skills/vision.js)
 const MODELS = {
   'qwen3.5:4b': {
     accuracy: 0.96,
@@ -25,6 +26,8 @@ const MODELS = {
     about: 'Лучший баланс скорости и ума для Ориона',
     tags: ['по умолчанию', 'рекомендую'],
     license: 'Apache 2.0',
+    // Проверено 2026-10-11: llama.cpp b11552, описание скриншота — 3,7 с, мелкий текст читает
+    vision: { repo: 'unsloth/Qwen3.5-4B-GGUF', remote: 'mmproj-F16.gguf', file: 'Qwen3.5-4B-mmproj-F16.gguf', size: 6.72e8 },
   },
   'qwen3.5:0.8b': {
     accuracy: 0.6,
@@ -128,6 +131,10 @@ function paths(config, modelsDir) {
     exe: path.join(dir, process.platform === 'win32' ? 'llama-server.exe' : 'llama-server'),
     url: `${RELEASES}/${build}/llama-${build}-bin-${v}.${v.startsWith('win') ? 'zip' : 'tar.gz'}`,
     gguf: path.isAbsolute(file) ? file : path.join(modelsDir, 'llm', file),
+    // Зрение: проектор изображений этой модели (если у неё он есть)
+    mmproj: known?.vision ? path.join(modelsDir, 'llm', known.vision.file) : null,
+    mmprojUrl: known?.vision ? `https://huggingface.co/${known.vision.repo}/resolve/main/${known.vision.remote}` : null,
+    mmprojSize: known?.vision?.size,
     ggufUrl: known && (known.url || `https://huggingface.co/${known.repo}/resolve/main/${known.file}`),
     size: known?.size,
     sha256: known?.sha256,
@@ -197,6 +204,7 @@ function createLlamaServer({ config, modelsDir, log = () => {}, idleMs = 0, name
   let starting = null;
   let tail = []; // последние строки журнала сервера — для понятной ошибки, если он не поднялся
   let idleTimer = null;
+  let visionLoaded = false; // сервер запущен с проектором изображений
   function touch() {
     clearTimeout(idleTimer);
     if (idleMs > 0) {
@@ -234,6 +242,9 @@ function createLlamaServer({ config, modelsDir, log = () => {}, idleMs = 0, name
       String(config.llamaCpp.gpuLayers ?? 999), // всё на видеокарту; без неё параметр ничего не делает
     ];
     if (device) args.push('-dev', device);
+    // Зрение: проектор скачан и не выключен — модель видит картинки (+0,7 ГБ видеопамяти)
+    visionLoaded = !!p.mmproj && config.vision !== false && fs.existsSync(p.mmproj);
+    if (visionLoaded) args.push('--mmproj', p.mmproj);
     // Без «размышлений вслух»: у Qwen это выключает и chat_template_kwargs, а у других моделей (Gemma 4 и т. п.)
     // свой шаблон — флаг движка выключает для любой. Включить — config.think: true
     if (config.think !== true) args.push('--reasoning', 'off');
@@ -296,6 +307,18 @@ function createLlamaServer({ config, modelsDir, log = () => {}, idleMs = 0, name
       return fs.existsSync(p.exe) && fs.existsSync(p.gguf);
     },
     headers: { Authorization: `Bearer ${key}` },
+    // Зрение: есть ли у модели проектор, скачан ли он, загружен ли в запущенный сервер
+    vision: () => {
+      const p = paths(config, modelsDir);
+      return {
+        supported: !!p.mmproj,
+        installed: !!p.mmproj && fs.existsSync(p.mmproj),
+        loaded: !!proc && visionLoaded,
+        file: p.mmproj,
+        url: p.mmprojUrl,
+        size: p.mmprojSize,
+      };
+    },
     stop,
     restart: () => (stop(), ensure()),
   };

@@ -10,6 +10,8 @@
 //   app/updates.js     — обновления отдельно скачанных частей: llama.cpp, быстрая модель, речь, голос, MCP
 //   app/radio-player.js — мини-плеер радио в углу экрана
 //   app/lifecycle.js   — запуск, трей, обновления, выход
+//   app/crash-guard.js — ошибки и падения окон: в журнал, окно перезагрузить
+//   app/backup.js      — резервная копия настроек, памяти и голосов одним файлом
 const electron = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -29,6 +31,8 @@ const { createModelManager } = require('./app/models');
 const { createUpdatesManager } = require('./app/updates');
 const { createRadioPlayer } = require('./app/radio-player');
 const { createSecrets } = require('./core/secrets');
+const { createCrashGuard } = require('./app/crash-guard');
+const { registerBackupIpc } = require('./app/backup');
 const pkg = require('../package.json');
 
 const { app, globalShortcut } = electron;
@@ -50,23 +54,33 @@ const configFile = configFileFor({ packaged, root, dataDir, ensureUserConfig, is
 const config = loadConfig(configFile);
 const modelsDir = resolveModelsDir({ config, packaged, root, dataDir, baseDir: packaged ? dataDir : root, execPath: process.execPath });
 
+// Из исходников (npm start) Windows показала бы в панели задач значок electron.exe — даём свой
+const devIcon = () => {
+  if (electron.app.isPackaged) return undefined;
+  const png = path.join(__dirname, '..', 'build', 'icon.png'); // npm run icon
+  return fs.existsSync(png) ? png : require('./core/tray').drawReactor(64);
+};
 const ui = createWindowManager({
+  icon: devIcon(),
   title: config.name,
   preload: path.join(__dirname, 'preload.js'),
-  html: path.join(__dirname, 'renderer', 'index.html'),
+  html: path.join(__dirname, 'ui', 'dist', 'index.html'),
   pinned: config.pinned === true,
+  cube: () => config.ui?.cube !== false, // скрытое окно оставляет в углу маленький шар
+  taskbar: () => config.ui?.taskbar !== false, // кнопка в панели задач Windows и в свёрнутом виде
   orbOffset: (area) => radioPlayer?.orbOffset(area) || 0, // плашка — над мини-плеером, если он в том же углу
 });
 const settingsWindow = createSettingsWindow({
   title: config.name,
   preload: path.join(__dirname, 'preload.js'),
-  html: path.join(__dirname, 'renderer', 'settings', 'index.html'),
+  html: path.join(__dirname, 'ui', 'dist', 'settings.html'),
   above: () => ui.pinned(),
 });
 const ipc = createIpc(ui, settingsWindow);
 
 let settings = null; // создаются ниже; навыки сохраняют настройки уже после запуска
 const services = createServices({ config, dataDir, modelsDir, ui, electron, saveSettings: (patch) => settings.saveAndShare(patch) });
+createCrashGuard({ app, audit: services.audit });
 const voice = createVoice({ app, config, modelsDir, dataDir, services, ui, ipc });
 createAsk({ config, services, voice, ui, ipc });
 // Ход установки — в оба окна: полоской в разговоре и в разделе «Компоненты» настроек
@@ -96,7 +110,14 @@ settings = createSettingsIpc({
   ipc,
   registerHotkey,
   secrets,
-  onSaved: (patch) => 'radio.player.show' in patch && radioPlayer.refresh(),
+  onSaved: (patch) => {
+    if ('radio.player.show' in patch) radioPlayer.refresh();
+    if ('ui.cube' in patch && ui.tucked()) ui.setMode('hidden'); // шар включили или выключили, пока окно скрыто
+    if ('ui.taskbar' in patch) {
+      ui.refreshLayer();
+      if (patch['ui.taskbar'] === false) ui.setOverlay(null);
+    }
+  },
 });
 app.whenReady().then(() => {
   secrets.openInto(config);
@@ -104,15 +125,20 @@ app.whenReady().then(() => {
 });
 const radioPlayer = createRadioPlayer({
   preload: path.join(__dirname, 'preload.js'),
-  html: path.join(__dirname, 'renderer', 'radio-player', 'index.html'),
+  html: path.join(__dirname, 'ui', 'dist', 'radio-player.html'),
   config,
   radio: services.radio,
   saveSettings: (patch) => settings.save(patch),
   audit: services.audit,
 });
 ipc.add(radioPlayer);
+services.ctx.openSettings = (page) => settingsWindow.open(String(page || '')); // «открой настройки» голосом
 services.radio.setPlayer(radioPlayer);
 ipc.on('jarvis:radio-control', (msg) => radioPlayer.control(msg));
+registerBackupIpc({ ipc, app, dialog: electron.dialog, dataDir, configFile, audit: services.audit, appVersion: pkg.version });
+// Полоска «Запланировано» в окне: таймеры, напоминания, будильники — список и отмена крестиком
+ipc.handle('jarvis:schedule', () => services.schedule());
+ipc.on('jarvis:schedule-cancel', (id) => services.scheduleCancel(String(id)));
 const mcp = createMcpManager({ config, dataDir, services, settings, ipc });
 const models = createModelManager({ config, modelsDir, services, settings, ipc, dialog: electron.dialog });
 const updates = createUpdatesManager({ config, modelsDir, services, settings, ipc, voice, models, mcp });

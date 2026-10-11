@@ -39,18 +39,15 @@ function parseResults(html) {
   return out;
 }
 
-// Поиск; сбой сети или пустая выдача (YouTube иногда отдаёт страницу без данных) — ещё одна попытка
-async function searchVideos(query, { attempts = 2 } = {}) {
+// Поиск. Пустая выдача (YouTube иногда отдаёт страницу без данных) — ещё одна попытка; YouTube не ответил
+// вовремя — сразу ошибка: второе ожидание по 8 с означало бы до 16 с тишины
+async function searchVideos(query, { attempts = 2, timeoutMs = 6000 } = {}) {
   // sp=EgIQAQ%3D%3D — фильтр «только видео»
   const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIQAQ%253D%253D`;
   for (let i = 1; ; i++) {
-    try {
-      const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(8000) });
-      const found = res.ok ? parseResults(await res.text()) : [];
-      if (found.length || i >= attempts) return found;
-    } catch (err) {
-      if (i >= attempts) throw err;
-    }
+    const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(timeoutMs) });
+    const found = res.ok ? parseResults(await res.text()) : [];
+    if (found.length || i >= attempts) return found;
   }
 }
 

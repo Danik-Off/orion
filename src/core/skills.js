@@ -21,8 +21,12 @@
 //     use       — когда применять (попадает в промпт)
 //     examples  — [фраза пользователя, план] — учат модель пользоваться инструментом
 //     argEnum   — все допустимые значения arg: модель физически не сможет написать другое (грамматика движка)
+//     owns      — RegExp фразы, которая всегда этому инструменту, что бы ни решила маленькая модель:
+//               «напечатай …, буду через 10 минут» — печать, а не таймер (аргумент всё равно пишет модель)
+//     argPattern — RegExp допустимого arg, если значений не перечислить («30», «+10», «mute»): другое не выполняется —
+//               мусор от модели («javascript:alert(1)») не превращается в «громкость 1%»
 //     normalize(arg, text) → arg — исправить типичную ошибку модели по исходной фразе (до выполнения)
-//     run(arg, ctx, request) → { ok, speak?, message?, sources? }
+//     run(arg, ctx, request) → { ok, speak?, message?, sources?, card? } (card — данные карточки для окна: погода, таймер…)
 //        speak   — готовый текст ответа (заменяет заготовку модели)
 //        message — пояснение, если не получилось или нужно что-то сказать сверх плана
 //     speaks: true — run всегда возвращает speak или message: реплику модели можно не дописывать
@@ -53,6 +57,10 @@
 // request — { text } исходная фраза пользователя.
 
 const { installedRouterVersion } = require('./component-releases');
+const { normalizeRequest, idiomPlan } = require('../lib/idioms');
+
+// Ошибка сети у навыка: fetch не достучался, имя не разрешилось, сервер не ответил вовремя
+const NETWORK_ERROR = /fetch failed|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|UND_ERR|network|timed? ?out|aborted|сеть/i;
 
 const MAX_SELECTED = 4; // навыков с полным описанием в одном запросе (не считая always)
 const CHAT_TOPIC = 'chat'; // тема «просто разговор» — без навыков
@@ -187,7 +195,11 @@ function createSkillRegistry(skills, { config, ctx, audit, platform = process.pl
         },
       },
     }));
-  const argAllowed = (name, arg) => !tools.get(name)?.tool.argEnum || tools.get(name).tool.argEnum.includes(arg);
+  const argAllowed = (name, arg) => {
+    const tool = tools.get(name)?.tool;
+    if (tool?.argEnum && !tool.argEnum.includes(arg)) return false;
+    return !tool?.argPattern || tool.argPattern.test(String(arg ?? ''));
+  };
 
   // --- база знаний: какие навыки нужны фразе ---
 
@@ -249,12 +261,30 @@ function createSkillRegistry(skills, { config, ctx, audit, platform = process.pl
   const fillerOf = (toolName) => tools.get(toolName)?.tool.filler || null;
   const speaksOf = (toolName) => tools.get(toolName)?.tool.speaks === true;
 
-  function quickPlan(text) {
+  // Быстрый разбор: навыки по исходной фразе → бытовые фразы и жалобы (lib/idioms.js) → навыки по фразе,
+  // приведённой к команде («а можешь, пожалуйста, включить радио маяк» → «включи радио маяк»).
+  // Сломавшийся разбор одного навыка не роняет остальные
+  function quickBySkills(text) {
     for (const skill of enabled) {
-      const plan = skill.quick?.(text, ctx);
-      if (plan) return plan;
+      try {
+        const plan = skill.quick?.(text, ctx);
+        if (plan) return plan;
+      } catch (err) {
+        audit({ skill: skill.id, quick: String(err?.message || err).slice(0, 160) });
+      }
     }
     return null;
+  }
+  function quickPlan(text) {
+    const own = quickBySkills(text);
+    if (own) return own;
+    let idiom = null;
+    try {
+      idiom = idiomPlan(text, ctx);
+    } catch {}
+    if (idiom?.actions?.every((a) => tools.has(a.tool) && argAllowed(a.tool, a.arg))) return idiom;
+    const asCommand = normalizeRequest(text);
+    return asCommand && asCommand !== normalize(text).trim() ? quickBySkills(asCommand) : null;
   }
 
   // Аргумент, который получит навык: исправленный по исходной фразе (normalize инструмента)
@@ -279,12 +309,18 @@ function createSkillRegistry(skills, { config, ctx, audit, platform = process.pl
     try {
       // Исправляем аргумент от модели по исходной фразе; вызовы из других навыков — как есть
       if (depth === 0) arg = prepare(name, arg, request.text);
+      if (!argAllowed(name, String(arg ?? ''))) {
+        audit({ skill: entry.skill, tool: name, arg, error: 'недопустимый аргумент' });
+        return { ok: false, message: 'Не понял, что именно сделать, сэр.' };
+      }
       const result = (await entry.tool.run(String(arg ?? ''), callCtx, request)) || { ok: true };
       audit({ skill: entry.skill, tool: name, arg, ok: result.ok });
       return result;
     } catch (err) {
       audit({ skill: entry.skill, tool: name, arg, error: String(err?.message || err) });
-      return { ok: false, message: 'Не получилось выполнить, сэр.' };
+      // Нет сети — так и сказать: «не получилось» человек принял бы за поломку
+      const offline = NETWORK_ERROR.test(`${err?.message || err} ${err?.cause?.code || ''} ${err?.code || ''}`);
+      return { ok: false, message: offline ? 'Похоже, нет связи с интернетом, сэр.' : 'Не получилось выполнить, сэр.' };
     }
   }
 
@@ -303,8 +339,16 @@ function createSkillRegistry(skills, { config, ctx, audit, platform = process.pl
     }
   }
 
+  // Инструмент, которому фраза принадлежит по первым словам (owns), — или null
+  function owner(text) {
+    const t = normalize(text).trim();
+    for (const [name, { tool, skill }] of tools) if (tool.owns?.test(t)) return { skill, tool: name };
+    return null;
+  }
+
   return {
     names,
+    owner,
     catalogPrompt,
     toolCatalogPrompt,
     detailsPrompt,

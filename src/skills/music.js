@@ -14,7 +14,9 @@ const QUICK = [
   [/^(назад|предыдущ(ий|ая|ую)( трек| песн[яю])?)$/, 'prev', 'Предыдущий трек.'],
   [/^(сделай )?(по)?громче$/, 'volume_up', 'Громче.'],
   [/^(сделай )?(по)?тише$/, 'volume_down', 'Тише.'],
-  [/^(выключи звук|без звука|заглуши|включи звук)$/, 'mute', 'Готово.'],
+  // «Включи звук» / «выключи звук» — не здесь: клавиша mute переключает, и «включи звук» при включённом звуке
+  // его выключала. Их разбирает lib/idioms.js явно: volume(unmute) / volume(mute)
+  [/^(заглуши)$/, 'mute', 'Готово.'],
 ];
 const AGAIN = /^(ещё|еще|ещё раз|еще раз|больше|сильнее|и ещё|и еще)$/;
 
@@ -64,10 +66,26 @@ function speakable(title) {
   return clean.length > 60 ? `${clean.slice(0, 60)}…` : clean || title.slice(0, 60);
 }
 
+// Жанр из запроса — для радио, если YouTube не ответил: «спокойная музыка» → «спокойная»
+const GENRES = /рок|джаз|класси|шансон|поп|металл|рэп|хип-хоп|электрон|диско|блюз|кантри|lofi|chill|спокойн|релакс|танцевал|ретро|80|90/i;
+
 // Открыть видео и дождаться, что оно играет; если браузер оставил его на паузе — нажать «играть»
 async function playOnYoutube(query, ctx) {
   const mix = /музык|микс|плейлист|подборк|радио|lofi|chill/i.test(query) && !/клип|песн[яю]|трек/i.test(query);
-  const video = pickForListening(await searchVideos(query), { mix });
+  let videos;
+  try {
+    videos = await searchVideos(query);
+  } catch (err) {
+    ctx.audit?.({ youtube: 'не ответил', query, error: String(err?.message || err).slice(0, 120) });
+    // Просили просто музыку или жанр — радио того же жанра лучше тишины; песню — честно сказать, что с YouTube
+    if (mix && ctx.call) {
+      const genre = query.match(GENRES)?.[0] || '';
+      const radio = await ctx.call('radio', genre).catch(() => null);
+      if (radio?.ok) return { ...radio, speak: `YouTube сейчас не отвечает, сэр, поэтому включаю радио. ${radio.speak || ''}`.trim() };
+    }
+    return { ok: false, message: 'YouTube сейчас не отвечает, сэр. Попробуйте чуть позже — или скажите «включи радио».' };
+  }
+  const video = pickForListening(videos, { mix });
   if (!video) return { ok: false, message: `Не нашёл на YouTube «${query}».` };
 
   // Сначала останавливаем то, что уже играет (и радио Ориона), чтобы звуки не смешались
@@ -145,6 +163,7 @@ module.exports = {
         ],
         ['поставь видео про чёрные дыры', { addressed: true, say: 'Ищу.', actions: [{ tool: 'youtube', arg: 'чёрные дыры научпоп' }] }],
       ],
+      filler: 'Ищу на YouTube.', // поиск занимает секунду-другую — сказать сразу
       run: async (query, ctx) => playOnYoutube(query || 'популярная музыка микс', ctx),
     },
     {

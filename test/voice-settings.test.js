@@ -90,7 +90,13 @@ test('свои настройки: сохраняются через saveSetting
   assert.match(r.speak, /перезапуска/);
   assert.equal((await skills.run('my_setting', 'name ')).ok, false);
 
+  const weather = require('../src/skills/weather');
+  const realGeocode = weather.geocode;
+  weather.geocode = async (q) => (/новосибирск/.test(q) ? { name: 'Новосибирск' } : null); // без сети
+  await skills.run('my_setting', 'city новосибирске');
+  assert.deepEqual(saved.at(-1), { city: 'Новосибирск' }, 'падеж — как у сервиса погоды');
   await skills.run('my_setting', 'city нижний новгород');
+  weather.geocode = realGeocode;
   assert.deepEqual(saved.at(-1), { city: 'Нижний Новгород' });
   assert.match((await skills.run('my_setting', 'show')).speak, /Джарвис.*Нижний Новгород/s);
 });
@@ -99,6 +105,58 @@ test('настройки голосом: большой модели — тол�
   const { skills } = makeRegistry();
   assert.equal(skills.external('выключи вайфай'), 'system');
   assert.equal(skills.external('пусть тебя зовут Пятница'), 'assistant-settings');
-  for (const t of ['сделай экран темнее', 'какая скорость вайфая', 'открой настройки', 'запиши мой голос'])
-    assert.equal(skills.external(t), null, t);
+  for (const t of ['сделай экран темнее', 'какая скорость вайфая', 'запиши мой голос']) assert.equal(skills.external(t), null, t);
+});
+
+test('имя ассистента: грубое, обычное или слишком короткое слово не ставится — ни голосом, ни в настройках', async () => {
+  const { nameProblem } = require('../src/lib/names');
+  for (const ok of ['Джарвис', 'Орион', 'Алиса', 'Пятница']) assert.equal(nameProblem(ok), null, ok);
+  assert.match(nameProblem('Негр'), /грубое/);
+  assert.match(nameProblem('Алло'), /обычное слово/);
+  assert.match(nameProblem('Ок'), /короткое/);
+  assert.match(nameProblem('не игер'), /одно слово/);
+
+  const { skills, ctx } = makeRegistry();
+  const saved = [];
+  ctx.saveSettings = (patch) => (saved.push(patch), { ok: true });
+  const r = await skills.run('my_setting', 'name негр');
+  assert.equal(r.ok, false);
+  assert.match(r.message, /грубое слово\. Имя остаётся прежним/);
+  assert.deepEqual(saved, [], 'ничего не сохранено');
+
+  const { createSettings } = require('../src/core/settings');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const os = require('node:os');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'orion-name-')), 'config.json');
+  const settings = createSettings({ config: { ...ctx.config }, file, skills: [], setHotkey: () => true });
+  const bad = settings.save({ name: 'Сука' });
+  assert.equal(bad.ok, false);
+  assert.match(bad.error, /грубое/);
+
+  // «Как тебя зовут» — просто имя; «какие у меня стоят будильники» — будильники
+  assert.equal(skills.quickPlan('как тебя зовут').say, `Меня зовут ${ctx.config.name}.`);
+  assert.equal(toolOf(skills, 'какие у меня стоят будильники'), 'alarm list');
+  assert.equal(toolOf(skills, 'как по английски яблоко'), 'translate английский|яблоко');
+  const { guardFindScreenshot } = require('../src/core/assistant/intent');
+  assert.deepEqual(guardFindScreenshot({ actions: [{ tool: 'screenshot', arg: '' }], say: '' }, 'найди вчерашний скриншот').actions, [
+    { tool: 'recent_files', arg: 'скриншоты вчера' },
+  ]);
+});
+
+test('горячая клавиша: Shift+A и одна буква не сохраняются; Ctrl/Alt/Win или F-клавиша — да', () => {
+  const { createSettings } = require('../src/core/settings');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const os = require('node:os');
+  const { ctx } = makeRegistry();
+  const registered = [];
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'orion-hotkey-')), 'config.json');
+  fs.writeFileSync(file, '{}');
+  const settings = createSettings({ config: { ...ctx.config }, file, skills: [], setHotkey: (k) => (registered.push(k), true) });
+  for (const bad of ['Shift+A', 'A', 'Shift+Tab', 'F25'])
+    assert.equal(settings.save({ hotkey: bad }).ok, false, `${bad} — нельзя: отнимет клавишу у всех программ`);
+  assert.deepEqual(registered, []);
+  for (const good of ['CommandOrControl+Alt+J', 'Alt+Space', 'Super+Shift+O', 'F9'])
+    assert.equal(settings.save({ hotkey: good }).ok, true, good);
 });

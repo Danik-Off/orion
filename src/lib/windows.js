@@ -152,7 +152,28 @@ async function defaultBrowserProcess() {
   return null;
 }
 
+// Закрыть окно, которое сейчас впереди («закрой это окно»): обычный сигнал «закрыть», как крестик — программа
+// сама спросит про несохранённое. Не трогаем окно самого Ориона, рабочий стол и панель задач (их «закрытие» —
+// это диалог выключения компьютера). → имя процесса закрытого окна или '' (закрывать нечего / нельзя)
+async function closeForegroundWindow() {
+  const out = await powershell(
+    "Add-Type -Namespace OF -Name W -MemberDefinition '" +
+      '[DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();' +
+      '[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(System.IntPtr h, out uint pid);' +
+      '[DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(System.IntPtr h, System.Text.StringBuilder s, int n);' +
+      '[DllImport("user32.dll")] public static extern bool PostMessage(System.IntPtr h, uint m, System.IntPtr w, System.IntPtr l);' +
+      "'; $h = [OF.W]::GetForegroundWindow(); $p = 0; [void][OF.W]::GetWindowThreadProcessId($h, [ref]$p); " +
+      '$c = New-Object System.Text.StringBuilder 64; [void][OF.W]::GetClassName($h, $c, 64); ' +
+      '$n = (Get-Process -Id $p -ErrorAction SilentlyContinue).ProcessName; ' +
+      "if (-not $n -or $p -eq [int]$env:ORION_PID -or @('Progman','WorkerW','Shell_TrayWnd','Shell_SecondaryTrayWnd') -contains $c.ToString()) { '' } " +
+      'else { [void][OF.W]::PostMessage($h, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero); $n }',
+    { env: { ORION_PID: String(process.pid) } },
+  );
+  return String(out || '').trim();
+}
+
 module.exports = {
+  closeForegroundWindow,
   launch,
   powershell,
   asJsonList,

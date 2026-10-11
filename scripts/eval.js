@@ -10,6 +10,7 @@
 //   npm run eval -- --config файл.json — другой конфиг (test/fixtures/config.json — все навыки, как в тестах)
 //   npm run eval -- --planner single  — разбор одним промптом вместо двухшагового (сравнить)
 //   npm run eval -- --model имя|путь.gguf  — другая большая модель (из каталога, models/llm или полный путь)
+//   npm run eval -- --backend none   — без большой модели: что умеют быстрый разбор и маленькая (с --router --quick)
 //   npm run eval -- --build b11500     — другая сборка llama.cpp из models/llama.cpp
 //   npm run eval -- --llama-args "-ctk q8_0 -ctv q8_0"  — свои параметры запуска llama.cpp (сравнить)
 const fs = require('node:fs');
@@ -40,6 +41,7 @@ async function main() {
   const config = loadConfig(argv.includes('--config') ? path.resolve(argv[argv.indexOf('--config') + 1]) : projectConfigFile(root));
   if (argv.includes('--planner')) config.planner = argv[argv.indexOf('--planner') + 1]; // two-step или single
   if (argv.includes('--model')) config.model = argv[argv.indexOf('--model') + 1];
+  if (argv.includes('--backend')) config.backend = argv[argv.indexOf('--backend') + 1]; // none — без большой модели
   if (argv.includes('--build')) config.llamaCpp = { ...config.llamaCpp, build: argv[argv.indexOf('--build') + 1] };
   if (argv.includes('--llama-args'))
     config.llamaCpp = { ...config.llamaCpp, args: argv[argv.indexOf('--llama-args') + 1].split(/\s+/).filter(Boolean) };
@@ -102,7 +104,7 @@ async function main() {
       name: 'router',
     });
     process.on('exit', () => routerServer.stop());
-    router = createRouter({ config, server: routerServer, skills, audit: () => {} });
+    router = createRouter({ config, server: routerServer, skills, audit: () => {}, alone: () => llm.available() === false });
     await routerServer.ensure();
   }
   const memory = createMemory({ dir: fs.mkdtempSync(path.join(os.tmpdir(), 'orion-eval-')) });

@@ -1,7 +1,7 @@
 {
   "name": "orion",
   "productName": "Orion",
-  "version": "0.5.1",
+  "version": "1.0.0",
   "private": true,
   "description": "Орион — локальный голосовой ассистент в духе джарвис. на Electron + Ollama,максимально простой и удобный в использовании. Поддержка русского языка.",
   "author": {
@@ -15,15 +15,19 @@
   },
   "main": "src/main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "npm run ui:build && electron .",
+    "ui:build": "vite build --config src/ui/vite.config.ts",
+    "ui:watch": "vite build --config src/ui/vite.config.ts --watch",
+    "ui:check": "tsc -p src/ui/tsconfig.json",
     "models": "node scripts/get-models.js",
     "test": "node --test \"test/**/*.test.js\"",
     "eval": "node scripts/eval.js",
     "eval:holdout": "node scripts/eval.js --cases test/fixtures/eval-holdout.json",
     "icon": "node scripts/make-icon.js",
-    "screenshots": "electron scripts/screenshots.js",
-    "dist": "npm run icon && node scripts/build-info.js && electron-builder --publish never",
-    "dist:dir": "npm run icon && node scripts/build-info.js && electron-builder --dir --publish never",
+    "screenshots": "npm run ui:build && electron scripts/screenshots.js",
+    "dist": "npm run icon && npm run ui:build && node scripts/build-info.js && electron-builder --publish never",
+    "dist:dir": "npm run icon && npm run ui:build && node scripts/build-info.js && electron-builder --dir --publish never",
+    "endpoint-check": "node scripts/endpoint-check.js",
     "voice-check": "node scripts/voice-check.js",
     "stress-eva": "node scripts/stress-eval.js",
     "stress-phrases": "node scripts/stress-phrases.js",
@@ -38,7 +42,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "npm run lint && npm run format:check && npm test"
+    "check": "npm run lint && npm run ui:check && npm run format:check && npm test"
   },
   "build": {
     "appId": "io.github.danik-off.orion",
@@ -49,6 +53,8 @@
     },
     "files": [
       "src/**/*",
+      "!src/ui/{src,public}/**",
+      "!src/ui/*.{ts,json,html}",
       "config.json",
       "package.json",
       "docs/models/orion-router/{NOTICE,GEMMA_TERMS.txt,PROHIBITED_USE_POLICY.txt}",
@@ -131,12 +137,24 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@fontsource/jetbrains-mono": "^5.2.6",
+    "@fontsource/manrope": "^5.2.6",
+    "@fontsource/unbounded": "^5.2.6",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.5.2",
     "electron": "^38.0.0",
     "electron-builder": "^26.15.3",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^5.2.0",
     "globals": "^17.13.0",
-    "prettier": "^3.9.9"
+    "prettier": "^3.9.9",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.34.0",
+    "vite": "^6.3.5"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",

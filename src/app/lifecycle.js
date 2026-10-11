@@ -46,6 +46,9 @@ function startLifecycle({ electron, config, services, voice, setup, mcp, updates
     if (['full', 'orb', 'hidden'].includes(next)) ui.setMode(next);
   });
   ipc.on('jarvis:orb-height', (h) => ui.setOrbHeight(h));
+  ipc.on('jarvis:orb-passthrough', (on) => ui.setPassthrough(on === true));
+  ipc.on('jarvis:painted', (m) => ui.painted(String(m)));
+  ipc.on('jarvis:taskbar-state', ({ icon, label } = {}) => ui.setOverlay(icon || null, label));
   ipc.on('jarvis:radio-state', (state) => services.radio.report(state));
   // Будильник отложили («ещё 5 минут» или кнопкой) — позвонить снова
   ipc.on('jarvis:alarm-snooze', ({ payload, minutes } = {}) => payload && services.alarmSnooze(payload, minutes));

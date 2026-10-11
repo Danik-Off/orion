@@ -2,8 +2,11 @@
 // Свой разбор выражения — никакого eval.
 const { money } = require('../lib/ru');
 
-// + - * / ^, скобки, «15%» (= 0,15), sqrt(), десятичная запятая
+// + - * / ^, скобки, «15%» (= 0,15), sqrt(), десятичная запятая.
+// «100 - 10%» — как на калькуляторе: 90 (процент от того, что слева), а не 99,9
 function evaluate(expr) {
+  // Два числа через пробел — это не одно число: «2 5» значило бы 25 (запятую потеряли раньше) — лучше честная ошибка
+  if (/\d\s+\d/.test(String(expr))) throw new Error('два числа подряд без действия');
   const src = String(expr).replace(/,/g, '.').replace(/\s+/g, '').replace(/\*\*/g, '^').replace(/[×х]/g, '*').replace(/[÷:]/g, '/');
   if (!src || src.length > 200) throw new Error('пустое выражение');
   let i = 0;
@@ -48,11 +51,18 @@ function evaluate(expr) {
       } else return v;
     }
   }
+  // «+ 10%» в конце слагаемого — процент от накопленного: 200 + 10% = 220
+  function percentOf(base, sign) {
+    const m = src.slice(i).match(/^(\d+(?:\.\d+)?)%(?![\d(*/^%])/);
+    if (!m) return null;
+    i += m[0].length;
+    return base * (1 + (sign * Number(m[1])) / 100);
+  }
   function expr1() {
     let v = term();
     for (;;) {
-      if (eat('+')) v += term();
-      else if (eat('-')) v -= term();
+      if (eat('+')) v = percentOf(v, 1) ?? v + term();
+      else if (eat('-')) v = percentOf(v, -1) ?? v - term();
       else return v;
     }
   }

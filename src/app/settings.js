@@ -72,6 +72,8 @@ function createSettingsIpc({
       tts: speech.tts,
       listenOnStart: config.speech.listenOnStart !== false,
       followUpSeconds: config.speech.followUpSeconds,
+      night: config.speech.night || null,
+      ui: config.ui || {},
       echoCancellation: config.speech.echoCancellation !== false,
       speaker: await voice.peopleInfo(),
       mode: ui.mode(),
@@ -106,6 +108,13 @@ function createSettingsIpc({
     }
   });
   ipc.on('jarvis:open-settings', (page) => settingsWindow.open(String(page || '')));
+  // Пример из «Что я умею» — показать окно разговора и выполнить его там
+  ipc.on('jarvis:try', (text) => {
+    const phrase = String(text || '').trim();
+    if (!phrase) return;
+    ui.setMode('full');
+    ui.send('jarvis:try', phrase);
+  });
   // Окно разговора: свернуть; закрепить поверх остальных (запоминается в config.json)
   ipc.on('jarvis:minimize', () => ui.minimize());
   ipc.on('jarvis:pin', (on) => {

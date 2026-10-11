@@ -30,7 +30,7 @@ test('ошибки модели объясняются по-человеческ
   assert.match(explainError(new TypeError('fetch failed'), config), /связаться с Ollama/);
   assert.match(
     explainError(new TypeError('fetch failed'), { ...config, backend: 'llamacpp' }),
-    /^Сбой/,
+    /пошло не так/,
     'про Ollama — только если выбран он',
   );
   assert.match(explainError(new Error('model "x" not found'), config), /ollama pull qwen3\.5:4b/);

@@ -1,7 +1,9 @@
 // Свои настройки голосом: «говори быстрее/медленнее», «смени голос», «голос номер три», «теперь тебя зовут Джарвис»,
 // «мой город Казань», «жди ответа дольше», «какие у тебя настройки». Пишет через тот же путь, что окно настроек
 // (проверка значений, оба окна узнают об изменении); имя меняет и слово отклика — после перезапуска.
+const { nameProblem } = require('../lib/names');
 const { wordsToNumber } = require('../lib/ru');
+const weather = require('./weather'); // weather.geocode — через объект: тест подменяет поиск города
 
 const SPEED_STEP = 0.1;
 const FOLLOW_STEP = 3;
@@ -48,7 +50,9 @@ function mySetting(arg, ctx) {
   }
   if (what === 'name') {
     const name = value.replace(/^./, (c) => c.toUpperCase());
-    if (!/^[А-ЯЁA-Z][а-яёa-z-]{1,19}$/.test(name)) return { ok: false, message: 'Какое имя мне взять, сэр?' };
+    if (!value) return { ok: false, message: 'Какое имя мне взять, сэр?' };
+    const problem = nameProblem(name);
+    if (problem) return { ok: false, message: `${problem} Имя остаётся прежним — ${ctx.config.name}.` };
     if (name === ctx.config.name) return { ok: true, speak: `Меня и так зовут ${name}.` };
     return save(ctx, { name }, `Теперь меня зовут ${name}, и откликаться буду на это имя.`);
   }
@@ -80,9 +84,12 @@ function mySetting(arg, ctx) {
   return { ok: false, message: 'Эту настройку голосом не поменять, она в окне настроек, сэр.' };
 }
 
-function quick(text) {
+function quick(text, ctx) {
   const t = norm(text);
   const plan = (arg) => ({ addressed: true, say: '', actions: [{ tool: 'my_setting', arg }] });
+  // «Как тебя зовут» — просто ответить, а не перечислять все настройки
+  if (/^(?:а )?(?:как тебя зовут|как твое имя|как тебя звать|кто ты такой|твое имя)$/.test(t) && ctx?.config?.name)
+    return { addressed: true, say: `Меня зовут ${ctx.config.name}.`, actions: [] };
   if (/^(?:говори|разговаривай|читай)(?: (?:чуть|немного|побольше|по))? (?:быстрее|побыстрее)$/.test(t)) return plan('speed faster');
   if (/^(?:говори|разговаривай|читай)(?: (?:чуть|немного|по))? (?:медленнее|помедленнее)$/.test(t)) return plan('speed slower');
   if (/^(?:смени|поменяй|другой|следующий)(?: (?:свой|мне))? голос$/.test(t)) return plan('voice next');
@@ -98,9 +105,30 @@ function quick(text) {
   if (city) return plan(`city ${city[1]}`);
   if (/^(?:жди|слушай)(?: ответа| продолжения| меня)? (?:дольше|подольше)$/.test(t)) return plan('wait longer');
   if (/^(?:жди|слушай)(?: ответа| продолжения| меня)? (?:меньше|короче|поменьше)$/.test(t)) return plan('wait shorter');
-  if (/^(?:какие у тебя|расскажи свои|назови свои|покажи свои) настройки$/.test(t)) return plan('show');
+  if (/^(?:(?:расскажи|скажи) )?(?:какие у тебя(?: сейчас)?|свои|твои) настройки$|^(?:назови|покажи) свои настройки$/.test(t))
+    return plan('show');
+  // «Открой настройки» — окно настроек Ориона; «настройки звука/блютуза» — это Windows (навык system)
+  const open = t.match(
+    /^(?:открой|покажи|зайди в|запусти)(?: мне)?(?: свои| твои)? настройки(?: ориона| ассистента)?(?: (.+))?$|^настройки$/,
+  );
+  if (open) {
+    const page = open[1] ? SETTINGS_PAGES.find(([re]) => re.test(open[1]))?.[1] : '';
+    if (page !== undefined) return { addressed: true, say: '', actions: [{ tool: 'open_settings', arg: page }] };
+  }
   return null;
 }
+
+// Разделы окна настроек по словам: «открой настройки моделей», «…голоса»
+const SETTINGS_PAGES = [
+  [/модел|мозг|интеллект|нейросет|llm/, 'models'],
+  [/голос|речи|озвучк/, 'voice'],
+  [/слух|распознав|имени|отклик/, 'hearing'],
+  [/подключени|mcp|сервис/, 'connections'],
+  [/компонент|обновлени/, 'components'],
+  [/навык/, 'skills'],
+  [/библиотек/, 'library'],
+  [/основн|общие|город/, 'general'],
+];
 
 module.exports = {
   id: 'assistant-settings',
@@ -114,13 +142,28 @@ module.exports = {
     /мой город|живу в городе/,
     /(?:жди|слушай)\S* (?:\S+ )?(?:дольше|подольше|меньше|короче)/,
     /какие у тебя настройки|свои настройки/,
+    /^(?:открой |покажи )?настройки$/,
   ],
   quick,
   rules: [
+    'open_settings — открыть окно настроек ассистента («открой настройки»); настройки Windows («настройки звука») — windows_settings.',
     'my_setting — поменять настройку самого ассистента: скорость речи, голос, имя, город пользователя, ожидание продолжения.',
     'Настройки Windows (тема, Wi-Fi, Bluetooth) — pc_setting; громкость — volume.',
   ],
   tools: [
+    {
+      name: 'open_settings',
+      use: 'открыть окно настроек самого ассистента (или его раздел: модели, голос, слух, подключения, компоненты, навыки)',
+      arg: 'пусто — главная; models | voice | hearing | connections | components | skills | library | general',
+      argEnum: ['', 'models', 'voice', 'hearing', 'connections', 'components', 'skills', 'library', 'general'],
+      speaks: true,
+      examples: [['открой настройки', { addressed: true, say: '', actions: [{ tool: 'open_settings', arg: '' }] }]],
+      run: async (arg, ctx) => {
+        if (!ctx.openSettings) return { ok: false, message: 'Окно настроек отсюда не открыть, сэр.' };
+        ctx.openSettings(arg);
+        return { ok: true, speak: 'Открываю настройки.' };
+      },
+    },
     {
       name: 'my_setting',
       use: 'скорость речи, голос ассистента, его имя, город пользователя, сколько ждать продолжения; show — перечислить',
@@ -130,7 +173,15 @@ module.exports = {
         ['говори помедленнее', { addressed: true, say: '', actions: [{ tool: 'my_setting', arg: 'speed slower' }] }],
         ['пусть тебя зовут Джарвис', { addressed: true, say: '', actions: [{ tool: 'my_setting', arg: 'name Джарвис' }] }],
       ],
-      run: (arg, ctx) => mySetting(arg, ctx),
+      // Город — как у сервиса погоды: «новосибирске» → «Новосибирск» (как при знакомстве); не нашёлся — как сказан
+      run: async (arg, ctx) => {
+        const city = String(arg || '')
+          .match(/^city\s+(.+)$/)?.[1]
+          ?.trim();
+        if (!city) return mySetting(arg, ctx);
+        const place = await weather.geocode(city).catch(() => null);
+        return mySetting(`city ${place?.name || city}`, ctx);
+      },
     },
   ],
   _test: { quick },

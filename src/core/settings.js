@@ -1,5 +1,6 @@
 // Настройки из окна: что можно менять, проверка значений и запись в config.json.
 // Меняется живой объект config (модули читают его при каждом вызове), в config.json пишутся только изменённые ключи.
+const { nameProblem } = require('../lib/names');
 const fs = require('node:fs');
 
 const text = (max) => (v) => {
@@ -31,6 +32,17 @@ const url = (v) => {
   }
 };
 
+// Горячая клавиша: с Ctrl, Alt или Win (Shift — только вместе с ними) или одна функциональная F1–F24.
+// «Shift+A» отняло бы у всех программ заглавную «A»
+const hotkeyCheck = (v) => {
+  const s = String(v ?? '').trim();
+  if (!s || s.length > 60) return undefined;
+  const parts = s.split('+');
+  const key = parts.at(-1);
+  const strong = parts.slice(0, -1).some((m) => /^(CommandOrControl|CmdOrCtrl|Control|Ctrl|Command|Alt|Option|Super|Meta)$/i.test(m));
+  return strong || (parts.length === 1 && /^F([1-9]|1[0-9]|2[0-4])$/.test(key)) ? s : undefined;
+};
+
 // live: применяется сразу; иначе — после перезапуска. Горячая клавиша проверяется отдельно (регистрацией).
 // secret: значение в окно не отдаётся (видно лишь, задано ли оно), пустое при сохранении — «не менять».
 const FIELDS = {
@@ -57,12 +69,16 @@ const FIELDS = {
   planner: { check: oneOf('single', 'two-step'), live: true },
   llmIdleMinutes: { check: number(0, 120, 1), live: false },
   model: { check: text(80), live: true }, // у llama.cpp другая модель — это перезапуск сервера (см. save)
-  hotkey: { check: text(60), live: true },
+  hotkey: { check: hotkeyCheck, live: true },
   'speech.ttsSpeed': { check: number(0.6, 1.6, 0.05), live: true },
   'speech.ttsSpeaker': { check: number(0, 9, 1), live: true },
   'speech.ttsSteps': { check: oneOf(8, 12, 16), live: true },
   'speech.stress': { check: bool, live: true },
   'speech.followUpSeconds': { check: number(3, 20, 1), live: true },
+  'speech.night.enabled': { check: bool, live: true },
+  'speech.night.from': { check: number(0, 23, 1), live: true },
+  'speech.night.to': { check: number(0, 23, 1), live: true },
+  'speech.night.volume': { check: number(0.1, 1, 0.05), live: true },
   'speech.listenOnStart': { check: bool, live: true }, // действует при следующем запуске, перезапуск не нужен
   'speech.echoCancellation': { check: bool, live: false },
   'speech.vadThreshold': { check: number(0.15, 0.6, 0.05), live: false },
@@ -72,6 +88,9 @@ const FIELDS = {
   'radio.volume': { check: number(0, 1, 0.01), live: true },
   // Мини-плеер радио: показывать ли, в каком углу и на каком экране (id дисплея; нет такого — основной)
   'radio.player.show': { check: bool, live: true },
+  'ui.cube': { check: bool, live: true },
+  'ui.calm': { check: bool, live: true },
+  'ui.taskbar': { check: bool, live: true },
   'radio.player.corner': { check: oneOf('br', 'bl', 'tr', 'tl'), live: true },
   'radio.player.display': { check: (v) => (Number.isSafeInteger(Number(v)) ? Number(v) : undefined), live: true },
   onboarded: { check: bool, live: true }, // знакомство после установки прошло
@@ -117,6 +136,10 @@ function createSettings({ config, file, skills, setHotkey, secrets = require('./
       if (field?.secret && String(raw ?? '').trim() === '') continue; // пусто — оставить прежний ключ
       const value = field?.check(raw);
       if (value === undefined) return { ok: false, error: `Недопустимое значение: ${key}` };
+      if (key === 'name') {
+        const problem = nameProblem(value);
+        if (problem) return { ok: false, error: problem };
+      }
       const keys = key.split('.');
       const old = get(config, keys);
       if (old === value) continue;

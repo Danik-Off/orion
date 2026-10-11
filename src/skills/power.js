@@ -49,6 +49,7 @@ async function sleepAfter(arg, ctx) {
   const min = toMinutes(wordsToNumber(a), 600);
   if (!min || min > 600) return { ok: false, message: 'На сколько минут поставить таймер сна, сэр?' };
   sleepTimer = setTimeout(async () => {
+    ctx.radio?.stop?.(); // радио и звуки для сна играют в окне Ориона
     const playing = (await media.sessions().catch(() => [])).filter((s) => s.status === 'Playing');
     for (const s of playing) await media.control('pause', s.app).catch(() => {});
     ctx.audit({ sleepTimer: 'музыка на паузе', sessions: playing.length });
