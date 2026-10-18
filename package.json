@@ -157,7 +157,7 @@
     "vite": "^6.3.5"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.131.0",
+    "@anthropic-ai/sdk": "^0.134.0",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "electron-updater": "^6.8.9",
     "eyo-kernel": "^4.1.3",
